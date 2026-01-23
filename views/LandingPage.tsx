@@ -73,9 +73,9 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       parts.forEach(part => {
         if (typeof part === 'string') {
           const split = part.split(new RegExp(`(${keyword})`, 'g'));
-          split.forEach((s, i) => {
+          split.forEach((s, j) => {
             if (s === keyword) {
-              newParts.push(<span key={`${keyword}-${i}`} className="text-orange-500 font-black">{s}</span>);
+              newParts.push(<span key={`${keyword}-${j}`} className="text-orange-500 font-black">{s}</span>);
             } else if (s !== "") {
               newParts.push(s);
             }
@@ -302,9 +302,9 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
                         <span className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-500 border border-orange-500/20 px-3 py-1.5 rounded-full bg-black/40">{p.tag}</span>
                     </div>
                     <h3 className="text-3xl font-black uppercase italic tracking-tighter leading-none">{p.title}</h3>
-                    <p className={`text-sm leading-relaxed font-medium whitespace-pre-line ${(i === 0 || i === 1) ? 'text-orange-100/90' : 'text-gray-400 opacity-80'}`}>
+                    <div className={`text-sm leading-relaxed font-medium whitespace-pre-line ${(i === 0 || i === 1) ? 'text-orange-100/90' : 'text-gray-400 opacity-80'}`}>
                       {(i === 0 || i === 1) ? highlightText(p.desc) : p.desc}
-                    </p>
+                    </div>
                   </div>
 
                   <div className="relative z-10 space-y-6">
