@@ -1,7 +1,16 @@
 
-export type ViewState = 'LANDING' | 'LOGIN' | 'DASHBOARD';
+export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD';
 
 export type DashboardTab = 'overview' | 'atendimento' | 'evolution' | 'config-neural' | 'clientes' | 'financeiro' | 'n8n' | 'afiliados' | 'admin' | 'settings';
+
+export type SubscriptionStatus = 'ACTIVE' | 'TRIALING' | 'EXPIRED' | 'INACTIVE';
+
+export interface SystemMessage {
+  id: string;
+  text: string;
+  type: 'info' | 'alert' | 'urgent';
+  timestamp: number;
+}
 
 export interface UserSession {
   email: string;
@@ -10,6 +19,9 @@ export interface UserSession {
   isAdmin: boolean;
   isAffiliate?: boolean;
   trialStart: number;
+  subscriptionStatus?: SubscriptionStatus;
+  stripeCustomerId?: string;
+  messages?: SystemMessage[];
 }
 
 export interface EvolutionInstance {

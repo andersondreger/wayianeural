@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
@@ -6,11 +7,12 @@ import { Zap } from 'lucide-react';
 import { LandingPage } from './views/LandingPage';
 import { LoginPage } from './views/LoginPage';
 import { Dashboard } from './views/Dashboard';
+import { OnboardingPage } from './views/OnboardingPage';
 
 // Importação de Tipos
-import { ViewState, UserSession } from './types';
+import { ViewState, UserSession, SubscriptionStatus, SystemMessage } from './types';
 
-const ADMIN_EMAIL = 'dreger.anderson@gmail.com.br';
+const ADMIN_EMAIL = 'dregerr.anderson@gmail.com';
 
 export default function App() {
   const [view, setView] = useState<ViewState>('LANDING');
@@ -37,16 +39,46 @@ export default function App() {
 
   const handleLogin = (email: string, name?: string, phone?: string) => {
     const isAdmin = email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim();
+    
+    // Simulação de Mensagens do Sistema para Usuário Comum
+    const messages: SystemMessage[] = !isAdmin ? [
+      { id: '1', text: 'Sincronização com cluster n8n concluída com sucesso.', type: 'info', timestamp: Date.now() }
+    ] : [];
+
     const newUser: UserSession = {
       email: email.toLowerCase().trim(),
       name: name || email.split('@')[0].toUpperCase(),
       phone: phone || '',
       isAdmin,
-      trialStart: Date.now()
+      trialStart: Date.now(),
+      subscriptionStatus: isAdmin ? 'ACTIVE' : 'TRIALING',
+      messages
+    };
+    
+    setUser(newUser);
+    localStorage.setItem('wayflow_v3_core', JSON.stringify(newUser));
+    setView('DASHBOARD');
+  };
+
+  const handleRegisterTrial = (name: string, email: string, phone: string) => {
+    const isAdmin = email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim();
+    const newUser: UserSession = {
+      email: email.toLowerCase().trim(),
+      name: name.toUpperCase(),
+      phone: phone,
+      isAdmin,
+      trialStart: Date.now(),
+      subscriptionStatus: isAdmin ? 'ACTIVE' : 'TRIALING',
+      messages: [{ id: 'trial-msg', text: 'Seu período de teste de 15 dias começou. Aproveite a Engine!', type: 'info', timestamp: Date.now() }]
     };
     setUser(newUser);
     localStorage.setItem('wayflow_v3_core', JSON.stringify(newUser));
     setView('DASHBOARD');
+  };
+
+  const handleCheckoutMock = () => {
+    alert("Iniciando Handshake Seguro com Stripe Gateway...\nValor: R$ 89,00/mês");
+    // Futura integração: window.location.href = stripeCheckoutUrl;
   };
 
   const handleLogout = () => {
@@ -74,7 +106,7 @@ export default function App() {
         </div>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-12 flex flex-col items-center">
           <div className="text-[11px] font-black uppercase tracking-[1em] text-orange-500/50">WayFlow Neural</div>
-          <div className="text-[8px] font-bold uppercase tracking-[0.4em] text-gray-800 mt-4 italic animate-pulse">Sincronizando Clusters Globais...</div>
+          <div className="text-[8px] font-bold uppercase tracking-[0.4em] text-gray-800 mt-4 italic animate-pulse tracking-tighter">Sincronizando Clusters...</div>
         </motion.div>
       </div>
     );
@@ -85,7 +117,17 @@ export default function App() {
       <AnimatePresence mode="wait">
         {view === 'LANDING' && (
           <motion.div key="land" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <LandingPage onStart={() => setView('LOGIN')} />
+            <LandingPage onStart={() => setView('ONBOARDING')} />
+          </motion.div>
+        )}
+        {view === 'ONBOARDING' && (
+          <motion.div key="onboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+            <OnboardingPage 
+              onRegisterTrial={handleRegisterTrial} 
+              onLogin={handleLogin}
+              onCheckout={handleCheckoutMock}
+              onBack={() => setView('LANDING')} 
+            />
           </motion.div>
         )}
         {view === 'LOGIN' && (
