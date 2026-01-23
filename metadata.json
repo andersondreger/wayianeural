@@ -1,0 +1,8 @@
+{
+  "name": "WayIA Neural flow",
+  "description": "Enterprise-grade AI scalability platform with neural network integration and advanced funnel management.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
