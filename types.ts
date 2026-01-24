@@ -1,5 +1,5 @@
 
-export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD';
+export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD' | 'THANK_YOU';
 
 export type DashboardTab = 'overview' | 'atendimento' | 'evolution' | 'config-neural' | 'clientes' | 'financeiro' | 'n8n' | 'afiliados' | 'admin' | 'settings';
 
@@ -62,4 +62,12 @@ export interface Affiliate {
   email: string;
   referrals: number;
   commission: string;
+}
+
+export interface WebhookLog {
+  id: string;
+  event: string;
+  status: 'success' | 'error';
+  timestamp: number;
+  payload_summary: string;
 }

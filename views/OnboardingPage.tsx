@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, ShieldCheck, Zap, ArrowLeft, Clock, CreditCard, Sparkles, User, Mail, Smartphone, LogIn } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Zap, ArrowLeft, Clock, CreditCard, Sparkles, User, Mail, Smartphone, LogIn, Info } from 'lucide-react';
 import { NeonButton, GlassButton } from '../components/Buttons';
 import { GlassCard } from '../components/GlassCard';
 import { Logo } from '../components/Logo';
@@ -74,9 +74,31 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
               ))}
             </ul>
 
-            <NeonButton onClick={onCheckout} className="w-full !py-5 mt-4 text-[12px]">
-              <CreditCard size={14} className="mr-2" /> Ativar Licença Agora
-            </NeonButton>
+            <div className="space-y-4 pt-4">
+              <NeonButton 
+                onClick={(e) => {
+                  e.preventDefault();
+                  onCheckout();
+                }} 
+                className="w-full !py-5 text-[12px] shadow-[0_0_30px_rgba(255,115,0,0.2)]"
+              >
+                <CreditCard size={14} className="mr-2" /> Ativar via PIX ou Cartão
+              </NeonButton>
+              
+              <div className="flex items-center justify-between px-2 opacity-60">
+                <div className="flex items-center gap-1.5 grayscale hover:grayscale-0 transition-all cursor-help" title="PIX Instantâneo">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/a/a2/Logo%E2%80%94Pix.png" alt="PIX" className="h-3 object-contain invert" />
+                  <span className="text-[7px] font-black uppercase tracking-widest">PIX</span>
+                </div>
+                
+                <div className="flex items-center gap-2 group relative">
+                   <Info size={10} className="text-orange-500 cursor-help" />
+                   <span className="text-[7px] font-black uppercase tracking-widest text-gray-500">
+                     Fatura: <span className="text-white">WAYFLOW*NEURAL</span>
+                   </span>
+                </div>
+              </div>
+            </div>
           </GlassCard>
         </div>
       </div>
@@ -156,18 +178,6 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
               {isLoginMode ? 'Novo por aqui? Criar conta trial' : 'Já possui acesso? Fazer Login'}
             </button>
           </div>
-
-          {!isLoginMode && (
-            <div className="p-6 glass rounded-2xl border-white/5 flex gap-4 items-start">
-               <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500"><Zap size={18}/></div>
-               <div>
-                  <div className="text-[9px] font-black uppercase text-white mb-1 tracking-widest italic">Políticas de Handshake</div>
-                  <p className="text-[8px] text-gray-600 font-bold uppercase tracking-wider leading-relaxed">
-                    Após o período de 15 dias, os clusters serão suspensos. Ative a licença Enterprise para manter a sincronização vitalícia.
-                  </p>
-               </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
