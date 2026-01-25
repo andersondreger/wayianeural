@@ -1,7 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Verificação segura para evitar crash em ambientes sem process.env definido
 const getEnv = (key: string) => {
   try {
     return typeof process !== 'undefined' ? process.env[key] : undefined;
@@ -10,8 +9,14 @@ const getEnv = (key: string) => {
   }
 };
 
-const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL') || 'https://placeholder.supabase.co';
-const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'placeholder-key';
+const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-// O createClient não deve receber strings vazias para não quebrar a árvore do React
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Se as chaves não existirem, usamos um fallback que não quebra a inicialização, 
+// mas permite que tratemos o erro nos componentes
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && !supabaseUrl.includes('placeholder'));
+
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder-project.supabase.co', 
+  supabaseAnonKey || 'placeholder-key'
+);
