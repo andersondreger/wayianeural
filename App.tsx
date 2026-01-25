@@ -19,74 +19,77 @@ const ADMIN_EMAIL = 'dregerr.anderson@gmail.com';
  * CONFIGURAÇÃO DE PAGAMENTO (KIWIFY)
  * Link dinâmico que será usado no botão de checkout
  */
-const CHECKOUT_LINK = "https://pay.kiwify.com.br/SEU_CODIGO_AQUI"; 
+const CHECKOUT_LINK = "https://pay.kiwify.com.br/ufaPS6M"; 
 
 export default function App() {
   const [view, setView] = useState<ViewState>('LANDING');
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Função para verificar sessão e carregar perfil do usuário
+  const checkSession = async (isCheckoutSuccess: boolean) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        const isAdmin = session.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        
+        const userData: UserSession = {
+          email: session.user.email || '',
+          name: profile?.full_name || session.user.email?.split('@')[0].toUpperCase(),
+          phone: profile?.phone,
+          isAdmin,
+          trialStart: new Date(profile?.created_at || session.user.created_at).getTime(),
+          subscriptionStatus: isAdmin ? 'ACTIVE' : (profile?.subscription_status as SubscriptionStatus || 'TRIALING')
+        };
+        
+        setUser(userData);
+        
+        // Se for retorno de sucesso do checkout, prioriza a página de obrigado
+        if (isCheckoutSuccess) {
+          setView('THANK_YOU');
+        } else {
+          setView('DASHBOARD');
+        }
+      } else {
+        // Sem sessão, mas com parâmetro de sucesso: mostra ThankYouPage (será solicitado login no botão)
+        if (isCheckoutSuccess) {
+          setView('THANK_YOU');
+        } else {
+          setView('LANDING');
+        }
+      }
+    } catch (err) {
+      console.warn("Sincronização offline.");
+      if (isCheckoutSuccess) setView('THANK_YOU');
+    } finally {
+      setTimeout(() => setLoading(false), 800);
+    }
+  };
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const isSuccess = urlParams.get('checkout') === 'success';
 
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          const isAdmin = session.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-          
-          const userData: UserSession = {
-            email: session.user.email || '',
-            name: profile?.full_name || session.user.email?.split('@')[0].toUpperCase(),
-            phone: profile?.phone,
-            isAdmin,
-            trialStart: new Date(profile?.created_at || session.user.created_at).getTime(),
-            subscriptionStatus: isAdmin ? 'ACTIVE' : (profile?.subscription_status as SubscriptionStatus || 'TRIALING')
-          };
-          
-          setUser(userData);
-          
-          // Se for sucesso do checkout, mantemos na ThankYouPage
-          // Caso contrário, se estiver logado, vai pro Dashboard
-          if (isSuccess) {
-            setView('THANK_YOU');
-          } else {
-            setView('DASHBOARD');
-          }
-        } else {
-          // Se não tiver sessão e for sucesso, mostra ThankYouPage mesmo assim
-          if (isSuccess) {
-            setView('THANK_YOU');
-          }
-        }
-      } catch (err) {
-        console.warn("Sessão offline.");
-        if (isSuccess) setView('THANK_YOU');
-      } finally {
-        setTimeout(() => setLoading(false), 800);
-      }
-    };
-
-    checkSession();
+    checkSession(isSuccess);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         setUser(null);
-        // Só volta para LANDING se não estivermos na tela de sucesso
         const currentParams = new URLSearchParams(window.location.search);
+        // Só redireciona para LANDING se não estivermos processando um sucesso de checkout
         if (currentParams.get('checkout') !== 'success') {
           setView('LANDING');
         }
       } else if (_event === 'SIGNED_IN') {
-        checkSession();
+        const params = new URLSearchParams(window.location.search);
+        checkSession(params.get('checkout') === 'success');
       }
     });
 
@@ -164,9 +167,15 @@ export default function App() {
         {view === 'THANK_YOU' && (
           <ThankYouPage 
             onGoToDashboard={() => {
-              // Limpa o parâmetro da URL ao entrar no Dashboard para evitar loops
+              // Limpar parâmetro da URL de forma definitiva
               window.history.replaceState({}, document.title, window.location.pathname);
-              setView(user ? 'DASHBOARD' : 'ONBOARDING');
+              
+              // Direcionamento inteligente
+              if (user) {
+                setView('DASHBOARD');
+              } else {
+                setView('ONBOARDING');
+              }
             }} 
           />
         )}
