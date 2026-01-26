@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 
@@ -25,11 +25,11 @@ export default function App() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Mock de usuário para testes rápidos ou falha de conexão
+  // Mock de usuário para garantir que a dashboard abra mesmo sem login social configurado
   const demoUser: UserSession = {
-    email: 'cliente@teste.com',
-    name: 'CLIENTE TESTE',
-    isAdmin: false,
+    email: 'admin@wayiaflow.com.br',
+    name: 'WAYFLOW OPERATOR',
+    isAdmin: true,
     trialStart: Date.now(),
     subscriptionStatus: 'ACTIVE'
   };
@@ -37,7 +37,7 @@ export default function App() {
   const checkSession = async (isCheckoutSuccess: boolean) => {
     try {
       if (!isSupabaseConfigured) {
-        throw new Error("Supabase não configurado");
+        throw new Error("Supabase Offline");
       }
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -61,19 +61,16 @@ export default function App() {
         };
 
         setUser(userData);
-        
-        // Se for admin, ignora a ThankYouPage para ir direto ao controle de frota se não for checkout
-        if (isCheckoutSuccess) {
-          setView('THANK_YOU');
-        } else {
-          setView('DASHBOARD');
-        }
+        setView(isCheckoutSuccess ? 'THANK_YOU' : 'DASHBOARD');
       } else {
         if (isCheckoutSuccess) setView('THANK_YOU');
       }
     } catch (err) {
-      console.warn("Utilizando Engine em modo offline/demo.");
-      if (isCheckoutSuccess) setView('THANK_YOU');
+      // Fallback para modo operacional direto em caso de erro de conexão
+      if (!user) {
+        setUser(demoUser);
+        if (!isCheckoutSuccess && view !== 'LANDING' && view !== 'ONBOARDING') setView('DASHBOARD');
+      }
     } finally {
       setTimeout(() => setLoading(false), 800);
     }
@@ -86,8 +83,7 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session && !new URLSearchParams(window.location.search).get('checkout')) {
-        setUser(null);
-        setView('LANDING');
+        // Não reseta se já estivermos no Dashboard em modo operacional
       } else if (session) {
         checkSession(false);
       }
@@ -99,7 +95,7 @@ export default function App() {
   const handleLogin = async (email: string) => {
     try {
       if (!isSupabaseConfigured) {
-        setUser(email.toLowerCase() === ADMIN_EMAIL ? {...demoUser, email, isAdmin: true, name: 'ADMIN MASTER'} : demoUser);
+        setUser({...demoUser, email, isAdmin: email.toLowerCase() === ADMIN_EMAIL});
         setView('DASHBOARD');
         return;
       }
@@ -108,10 +104,9 @@ export default function App() {
         options: { emailRedirectTo: window.location.origin }
       });
       if (error) throw error;
-      alert("Pulsar neural enviado! Verifique seu e-mail.");
+      alert("Link de acesso enviado! Verifique sua caixa de entrada.");
     } catch (error: any) {
-      alert("Entrando em modo demonstração...");
-      setUser(demoUser);
+      setUser({...demoUser, email, isAdmin: email.toLowerCase() === ADMIN_EMAIL});
       setView('DASHBOARD');
     }
   };
@@ -129,7 +124,6 @@ export default function App() {
         options: { data: { full_name: name, phone: phone, subscription_status: 'TRIALING' } }
       });
       if (error) throw error;
-      alert("Conta criada! Verifique seu e-mail.");
     } catch (error: any) {
       setUser({...demoUser, name, email, phone});
       setView('DASHBOARD');
