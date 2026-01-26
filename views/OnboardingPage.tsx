@@ -35,7 +35,7 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
         <ArrowLeft size={14} /> Voltar ao Portal
       </button>
 
-      {/* LADO ESQUERDO: CHECKOUT STRIPE (89,00) */}
+      {/* LADO ESQUERDO: CHECKOUT STRIPE (89,90) */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 relative overflow-hidden border-r border-white/5 bg-gradient-to-br from-orange-500/[0.02] to-transparent">
         <div className="max-w-md w-full space-y-8 z-10">
           <div className="space-y-4">
@@ -50,7 +50,7 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
             <div className="flex justify-between items-end">
               <div>
                 <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Assinatura Mensal</div>
-                <div className="text-5xl font-black italic tracking-tighter">R$ 89,<span className="text-2xl">00</span></div>
+                <div className="text-5xl font-black italic tracking-tighter">R$ 89,<span className="text-2xl">90</span></div>
               </div>
               <div className="text-right">
                 <ShieldCheck className="text-orange-500 ml-auto mb-2" size={24} />
@@ -62,11 +62,11 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
 
             <ul className="space-y-4">
               {[
-                'Instâncias Ilimitadas (Evolution)',
-                'Treinamento Neural de Agentes IA',
-                'Kanban CRM com Análise de Sentimento',
-                'Integração Nativa n8n & Webhooks',
-                'Suporte Prioritário 24/7'
+                'WhatsApp Ilimitado (Conecte toda sua Equipe)',
+                'IA Treinada para Vender como Humano',
+                'Painel de Vendas com Leitura de Humor',
+                'Automação Total de Processos e Sistemas',
+                'Suporte VIP e Acompanhamento 24h'
               ].map((item, i) => (
                 <li key={i} className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-tight text-gray-400">
                   <CheckCircle2 size={12} className="text-orange-500 shrink-0" /> {item}
@@ -114,7 +114,7 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
                 </span>
              </div>
              <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">
-               {isLoginMode ? <>Entrar na <span className="text-blue-500">Engine.</span></> : <>Teste <span className="text-blue-500">Grátis</span> por <br/> 15 Dias.</>}
+               {isLoginMode ? <>Entrar na <span className="text-blue-500">Engine.</span></> : <>Teste <span className="text-blue-500">Grátis</span> por <br/> 14 Dias.</>}
              </h2>
           </div>
 
@@ -166,7 +166,7 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCheckout, onBack }:
             </div>
 
             <GlassButton type="submit" className="w-full !py-5 mt-4 !text-[12px] !border-blue-500/20 hover:!bg-blue-600/10 flex items-center justify-center gap-2">
-              {isLoginMode ? <><LogIn size={14} /> Acessar Dashboard</> : <><Sparkles size={14} className="text-blue-500" /> Iniciar 15 Dias de Trial</>}
+              {isLoginMode ? <><LogIn size={14} /> Acessar Dashboard</> : <><Sparkles size={14} className="text-blue-500" /> Iniciar 14 Dias de Trial</>}
             </GlassButton>
           </form>
 

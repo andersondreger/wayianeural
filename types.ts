@@ -35,6 +35,30 @@ export interface EvolutionInstance {
 
 export type Sentiment = 'happy' | 'neutral' | 'angry';
 
+export interface Message {
+  id: string;
+  text: string;
+  sender: 'me' | 'contact';
+  time: string;
+  status: 'sent' | 'delivered' | 'read';
+  type: 'text' | 'image' | 'audio';
+}
+
+export interface Ticket {
+  id: string;
+  contactName: string;
+  contactPhone: string;
+  lastMessage: string;
+  avatar?: string;
+  sentiment: Sentiment;
+  time: string;
+  status: 'aberto' | 'pendente' | 'resolvido';
+  unreadCount: number;
+  assignedTo: string;
+  protocol: string;
+  messages: Message[];
+}
+
 export interface Lead {
   id: string;
   name: string;
@@ -54,20 +78,4 @@ export interface AgentIA {
   objective: string;
   knowledgeBase: string;
   companyName: string;
-}
-
-export interface Affiliate {
-  id: string;
-  name: string;
-  email: string;
-  referrals: number;
-  commission: string;
-}
-
-export interface WebhookLog {
-  id: string;
-  event: string;
-  status: 'success' | 'error';
-  timestamp: number;
-  payload_summary: string;
 }

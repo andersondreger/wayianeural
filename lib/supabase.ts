@@ -12,11 +12,23 @@ const getEnv = (key: string) => {
 const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
 const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-// Se as chaves não existirem, usamos um fallback que não quebra a inicialização, 
-// mas permite que tratemos o erro nos componentes
-export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && !supabaseUrl.includes('placeholder'));
+// Validação rigorosa: Não é configurado se a URL for placeholder ou se as chaves forem strings vazias/undefined
+export const isSupabaseConfigured = !!(
+  supabaseUrl && 
+  supabaseAnonKey && 
+  supabaseUrl.trim() !== '' &&
+  !supabaseUrl.includes('placeholder') &&
+  supabaseUrl.startsWith('http')
+);
 
+// Fallback seguro para evitar erros de inicialização que travam a renderização
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder-project.supabase.co', 
-  supabaseAnonKey || 'placeholder-key'
+  isSupabaseConfigured ? supabaseUrl! : 'https://placeholder-project.supabase.co', 
+  isSupabaseConfigured ? supabaseAnonKey! : 'placeholder-key',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  }
 );
