@@ -63,62 +63,61 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
     } catch (err) { console.error("Erro ao carregar instâncias:", err); }
   };
 
-  // BUSCA DE CHATS REAIS (IMPORTAR CONTATOS) - MOTOR DE SINCRONIZAÇÃO CORRIGIDO
+  // BUSCA DE CHATS E CONTATOS (UNIFICADA)
   const fetchChatsFromInstance = async (instanceName: string) => {
     if (!instanceName) return;
     setIsLoadingChats(true);
     try {
-      // Endpoint Evolution v2 para buscar conversas
-      const res = await fetch(`${getBaseUrl()}/chat/fetchChats/${instanceName}`, { headers: getHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        
-        // Suporte a múltiplas estruturas de retorno da Evolution API
-        let chatsRaw = [];
-        if (Array.isArray(data)) {
-          chatsRaw = data;
-        } else if (data.chats && Array.isArray(data.chats)) {
-          chatsRaw = data.chats;
-        } else if (data.instance && data.instance.chats) {
-          chatsRaw = data.instance.chats;
-        } else if (typeof data === 'object' && data !== null) {
-          // Tenta encontrar qualquer propriedade que seja um array (fallback extremo)
-          const possibleArray = Object.values(data).find(v => Array.isArray(v));
-          if (possibleArray) chatsRaw = possibleArray as any[];
-        }
+      // 1. Tentar buscar Chats (Conversas Ativas)
+      const resChats = await fetch(`${getBaseUrl()}/chat/fetchChats/${instanceName}`, { headers: getHeaders() });
+      let chatsRaw = [];
+      
+      if (resChats.ok) {
+        const data = await resChats.json();
+        chatsRaw = Array.isArray(data) ? data : (data.chats || data.data || []);
+      }
 
-        const mappedTickets: Ticket[] = chatsRaw
-          .filter((chat: any) => chat.id || chat.remoteJid)
-          .map((chat: any) => {
-            const jid = chat.id || chat.remoteJid;
-            const phone = jid.split('@')[0];
-            const name = chat.pushName || chat.name || phone;
-            
-            return {
-              id: jid,
-              contactName: name,
-              contactPhone: phone,
-              lastMessage: chat.lastMessage?.message?.conversation || chat.lastMessage?.content || 'Mídia ou Mensagem do Sistema',
-              sentiment: 'neutral',
-              time: chat.updatedAt ? new Date(chat.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
-              status: 'aberto',
-              unreadCount: chat.unreadCount || 0,
-              assignedTo: instanceName,
-              protocol: `WA-${Math.floor(Math.random() * 90000) + 10000}`,
-              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ff7300&color=fff`,
-              messages: []
-            };
-          });
-
-        setTickets(mappedTickets);
-        
-        // Se houver contatos e nada selecionado, seleciona o primeiro
-        if (mappedTickets.length > 0 && (!selectedTicket || !mappedTickets.find(t => t.id === selectedTicket.id))) {
-          setSelectedTicket(mappedTickets[0]);
+      // 2. Se não houver chats, buscar Contatos (Agenda) como fallback
+      if (chatsRaw.length === 0) {
+        const resContacts = await fetch(`${getBaseUrl()}/contact/fetchContacts/${instanceName}`, { headers: getHeaders() });
+        if (resContacts.ok) {
+          const dataContacts = await resContacts.json();
+          chatsRaw = Array.isArray(dataContacts) ? dataContacts : (dataContacts.contacts || dataContacts.data || []);
         }
       }
+
+      const mappedTickets: Ticket[] = chatsRaw
+        .filter((item: any) => item.id || item.remoteJid || item.jid)
+        .map((item: any) => {
+          const jid = item.id || item.remoteJid || item.jid;
+          const phone = jid.split('@')[0];
+          const name = item.pushName || item.name || item.verifiedName || phone;
+          
+          return {
+            id: jid,
+            contactName: name,
+            contactPhone: phone,
+            lastMessage: item.lastMessage?.message?.conversation || item.lastMessage?.content || 'Sem mensagens recentes',
+            sentiment: 'neutral',
+            time: item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
+            status: 'aberto',
+            unreadCount: item.unreadCount || 0,
+            assignedTo: instanceName,
+            protocol: `WA-${Math.floor(Math.random() * 90000) + 10000}`,
+            avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ff7300&color=fff`,
+            messages: []
+          };
+        });
+
+      // Remover duplicados por ID
+      const uniqueTickets = mappedTickets.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+      setTickets(uniqueTickets);
+      
+      if (uniqueTickets.length > 0 && (!selectedTicket || !uniqueTickets.find(t => t.id === selectedTicket.id))) {
+        setSelectedTicket(uniqueTickets[0]);
+      }
     } catch (err) {
-      console.error("Erro ao sincronizar contatos:", err);
+      console.error("Erro na sincronização neural:", err);
     } finally {
       setIsLoadingChats(false);
     }
@@ -137,13 +136,13 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
 
       if (res.ok) {
         const data = await res.json();
-        const messagesRaw = Array.isArray(data) ? data : (data.messages || []);
+        const messagesRaw = Array.isArray(data) ? data : (data.messages || data.data || []);
         
         const mappedMessages: Message[] = messagesRaw.reverse().map((m: any) => ({
-          id: m.key.id,
-          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia ou Tipo não suportado",
-          sender: m.key.fromMe ? 'me' : 'contact',
-          time: new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          id: m.key?.id || Math.random().toString(),
+          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia não suportada",
+          sender: m.key?.fromMe ? 'me' : 'contact',
+          time: m.messageTimestamp ? new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
           status: 'read',
           type: 'text'
         }));
@@ -261,14 +260,14 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
             <div className="w-80 border-r border-white/5 flex flex-col bg-black/20">
               <div className="p-4 space-y-4">
                 <div className="space-y-1.5">
-                   <label className="text-[7px] font-black text-gray-600 uppercase tracking-widest px-1">Canal de Sincronização</label>
+                   <label className="text-[7px] font-black text-gray-600 uppercase tracking-widest px-1">Selecione o Canal (Chip)</label>
                    <div className="relative group">
                       <select 
                         value={selectedInstanceName}
                         onChange={(e) => setSelectedInstanceName(e.target.value)}
                         className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 px-4 text-[10px] font-black uppercase appearance-none outline-none focus:border-orange-500/40"
                       >
-                        <option value="">Selecione o Chip...</option>
+                        <option value="">Selecione a Instância...</option>
                         {instances.map(inst => (
                           <option key={inst.id} value={inst.name} disabled={inst.status !== 'CONNECTED'}>
                             {inst.status !== 'CONNECTED' ? '🔴 ' : '🟢 '}
@@ -315,7 +314,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                 ) : tickets.length === 0 ? (
                   <div className="text-center py-12 px-6 space-y-3 opacity-30">
                     <AlertCircle className="mx-auto text-gray-700" size={32} />
-                    <p className="text-[9px] font-black uppercase leading-tight italic">Nenhum contato encontrado nesta instância.</p>
+                    <p className="text-[9px] font-black uppercase leading-tight italic">Nenhum lead ou contato encontrado.</p>
                     <GlassButton onClick={() => fetchChatsFromInstance(selectedInstanceName)} className="!px-4 !py-2 !text-[8px]">Forçar Atualização</GlassButton>
                   </div>
                 ) : tickets.filter(t => t.status === activeFilter).map(ticket => (
@@ -339,7 +338,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                         </div>
                         <p className="text-[9px] text-gray-400 font-medium truncate mb-2">{ticket.lastMessage}</p>
                         <div className="flex items-center justify-between">
-                           <span className="text-[8px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black uppercase tracking-widest italic">Conectado</span>
+                           <span className="text-[8px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black uppercase tracking-widest italic">Ativo</span>
                            {ticket.unreadCount > 0 && <span className="bg-green-500 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">{ticket.unreadCount}</span>}
                         </div>
                       </div>
@@ -423,7 +422,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                 <div className="flex-1 flex flex-col items-center justify-center text-center opacity-20 p-12">
                    <MessageCircle size={80} className="mb-6 text-orange-500" />
                    <h2 className="text-2xl font-black uppercase italic tracking-tighter">Cluster de CRM</h2>
-                   <p className="text-[10px] uppercase font-bold tracking-[0.3em] mt-2">Escolha uma conversa para iniciar o processamento.</p>
+                   <p className="text-[10px] uppercase font-bold tracking-[0.3em] mt-2">Escolha um contato para iniciar o processamento.</p>
                 </div>
               )}
             </div>
