@@ -10,7 +10,7 @@ import {
   Mic, UserCircle, Bot, Phone, MessageCircle, ChevronDown,
   ChevronUp, History, ClipboardList, Star, AlertCircle,
   X, ExternalLink, Power, Trash, MoreHorizontal, UserCheck,
-  CheckCircle, ListFilter, UserPlus, Hash
+  CheckCircle, ListFilter, UserPlus, Hash, FileText, SendHorizontal
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance, Ticket, Message } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -45,7 +45,8 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
   const getHeaders = () => ({ 'apikey': evolutionApiKey, 'Content-Type': 'application/json' });
   const getBaseUrl = () => evolutionUrl.endsWith('/') ? evolutionUrl.slice(0, -1) : evolutionUrl;
 
-  // --- BUSCA DE INSTÂNCIAS ---
+  // --- GESTÃO DE INSTÂNCIAS (EVOLUTION) ---
+
   const fetchInstances = async () => {
     try {
       const res = await fetch(`${getBaseUrl()}/instance/fetchInstances`, { headers: getHeaders() });
@@ -56,7 +57,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
           id: inst.instanceId || inst.name,
           name: inst.instanceName || inst.name,
           status: (inst.status === 'open' || inst.connectionStatus === 'open' || inst.state === 'open' || inst.connectionStatus === 'CONNECTED') ? 'CONNECTED' : 'DISCONNECTED',
-          phone: inst.ownerJid?.split('@')[0] || 'Aguardando...',
+          phone: inst.ownerJid?.split('@')[0] || 'Desconectado',
           instanceKey: inst.token || inst.instanceKey
         })).filter((inst: any) => isAdminMaster || inst.name.startsWith(`${userPrefix}_`));
         
@@ -67,10 +68,54 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
           if (firstConnected) setSelectedInstanceName(firstConnected.name);
         }
       }
-    } catch (err) { console.error("Erro instâncias:", err); }
+    } catch (err) { console.error("Erro fetch instances:", err); }
   };
 
-  // --- MOTOR DE SINCRONIZAÇÃO CRM (GREEDY SYNC) ---
+  const createInstance = async () => {
+    const name = `${userPrefix}_CH_${instances.length + 1}`;
+    setIsCreatingInstance(true);
+    try {
+      const res = await fetch(`${getBaseUrl()}/instance/create`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          instanceName: name,
+          token: Math.random().toString(36).substring(7),
+          qrcode: true
+        })
+      });
+      if (res.ok) {
+        await fetchInstances();
+        setActiveTab('evolution');
+      }
+    } catch (err) { console.error("Erro create instance:", err); } finally { setIsCreatingInstance(false); }
+  };
+
+  const deleteInstance = async (name: string) => {
+    if (!confirm(`Confirmar REMOÇÃO da instância ${name}?`)) return;
+    try {
+      const res = await fetch(`${getBaseUrl()}/instance/delete/${name}`, { method: 'DELETE', headers: getHeaders() });
+      if (res.ok) fetchInstances();
+    } catch (err) { console.error("Erro delete instance:", err); }
+  };
+
+  const connectInstance = async (name: string) => {
+    try {
+      const res = await fetch(`${getBaseUrl()}/instance/connect/${name}`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.base64) {
+          setQrCodeModal({ isOpen: true, code: data.base64, name });
+        } else {
+          alert("Instância já conectada.");
+          fetchInstances();
+        }
+      }
+    } catch (err) { console.error("Erro connect:", err); }
+  };
+
+  // --- MOTOR DE SINCRONIZAÇÃO CRM ---
+
   const extractArray = (data: any): any[] => {
     if (Array.isArray(data)) return data;
     if (!data || typeof data !== 'object') return [];
@@ -100,7 +145,6 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
     };
 
     try {
-      // Busca exaustiva: Chats Ativos + Agenda de Contatos
       const [chats, contacts] = await Promise.all([
         tryFetch('/chat/fetchChats'),
         tryFetch('/contact/fetchContacts')
@@ -122,7 +166,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
             id: jid,
             contactName: name,
             contactPhone: phone,
-            lastMessage: item.lastMessage?.message?.conversation || item.lastMessage?.content || 'Sincronizado via Neural Flow',
+            lastMessage: item.lastMessage?.message?.conversation || item.lastMessage?.content || 'Pronto para atendimento',
             sentiment: 'neutral',
             time: item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'aberto',
@@ -136,16 +180,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
 
       const uniqueTickets = mappedTickets.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
       setTickets(uniqueTickets);
-      
-      if (uniqueTickets.length > 0 && !selectedTicket) {
-        // Não selecionar automaticamente para evitar carregamento pesado, ou seleciona o primeiro
-        // setSelectedTicket(uniqueTickets[0]);
-      }
-    } catch (err) {
-      console.error("Erro Sincronização:", err);
-    } finally {
-      setIsLoadingChats(false);
-    }
+    } catch (err) { console.error("Sync Error:", err); } finally { setIsLoadingChats(false); }
   };
 
   const fetchMessagesForTicket = async (ticket: Ticket) => {
@@ -164,7 +199,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
         
         const mappedMessages: Message[] = messagesRaw.reverse().map((m: any) => ({
           id: m.key?.id || Math.random().toString(),
-          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia/Arquivo Recebido",
+          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia recebida",
           sender: m.key?.fromMe ? 'me' : 'contact',
           time: m.messageTimestamp ? new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
           status: 'read',
@@ -175,12 +210,12 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
         setSelectedTicket(updatedTicket);
         setTickets(prev => prev.map(t => t.id === ticket.id ? updatedTicket : t));
       }
-    } catch (err) { console.error("Erro Mensagens:", err); } finally { setIsLoadingMessages(false); }
+    } catch (err) { console.error("Messages Error:", err); } finally { setIsLoadingMessages(false); }
   };
 
   useEffect(() => {
     fetchInstances();
-    const timer = setInterval(fetchInstances, 20000);
+    const timer = setInterval(fetchInstances, 30000);
     return () => clearInterval(timer);
   }, []);
 
@@ -219,7 +254,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
         setSelectedTicket(updated);
         setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
       }
-    } catch (err) { console.error("Erro Envio:", err); }
+    } catch (err) { console.error("Send Error:", err); }
   };
 
   const filteredTickets = useMemo(() => {
@@ -249,66 +284,88 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
     <div className="flex h-screen bg-[#050505] overflow-hidden text-white font-sans">
       <div className="fixed inset-0 grid-engine pointer-events-none opacity-5"></div>
 
-      {/* SIDEBAR NAVIGATION (RESTANTE ATUAL) */}
+      {/* SIDEBAR */}
       <aside className="w-[260px] border-r border-white/5 flex flex-col p-6 bg-black/40 backdrop-blur-2xl z-50">
         <Logo size="sm" className="mb-10 px-2" />
-        <div className="text-[8px] font-black text-gray-700 uppercase tracking-[0.3em] mb-4 px-2">Navegação Principal</div>
+        <div className="text-[8px] font-black text-gray-700 uppercase tracking-[0.3em] mb-4 px-2">Operação Digital</div>
         <nav className="flex-1 space-y-1">
-          <SidebarBtn id="overview" icon={LayoutDashboard} label="Visão Geral" />
+          <SidebarBtn id="overview" icon={LayoutDashboard} label="Overview" />
           <SidebarBtn id="atendimento" icon={MessageSquare} label="Atendimento CRM" />
-          <SidebarBtn id="evolution" icon={Smartphone} label="Canais Conexão" />
-          <SidebarBtn id="config-neural" icon={Brain} label="Fluxo Neural" />
+          <SidebarBtn id="evolution" icon={Smartphone} label="Canais Evolution" />
+          <SidebarBtn id="config-neural" icon={Brain} label="WayIA Neural" />
           <div className="h-px bg-white/5 my-6 mx-2" />
-          <SidebarBtn id="financeiro" icon={CreditCard} label="Faturamento" />
-          <SidebarBtn id="admin" icon={Crown} label="Admin Master" isAdmin={true} />
+          <SidebarBtn id="financeiro" icon={CreditCard} label="Financeiro" />
+          <SidebarBtn id="admin" icon={Crown} label="Painel Master" isAdmin={true} />
         </nav>
         <button onClick={onLogout} className="mt-6 flex items-center gap-3 px-5 py-4 text-gray-700 hover:text-red-500 transition-colors uppercase text-[9px] font-bold tracking-widest border-t border-white/5">
-            <LogOut size={16} /> Logout Sistema
+            <LogOut size={16} /> Encerrar
         </button>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN AREA */}
       <main className="flex-1 flex flex-col relative overflow-hidden bg-[#070707]">
         
+        {/* QR CODE MODAL */}
+        <AnimatePresence>
+          {qrCodeModal.isOpen && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
+              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-[#0a0a0a] border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black uppercase italic tracking-tighter text-orange-500">Conectar Canal</h3>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{qrCodeModal.name}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl mx-auto inline-block border-4 border-orange-500/20 shadow-2xl">
+                   <img src={qrCodeModal.code} className="w-48 h-48 object-contain" alt="QR Code" />
+                </div>
+                <p className="text-[9px] text-gray-400 font-medium leading-relaxed uppercase tracking-wider italic">Escaneie o QR Code no seu WhatsApp para sincronizar com a WayFlow.</p>
+                <NeonButton onClick={() => setQrCodeModal({ ...qrCodeModal, isOpen: false })} className="w-full">Concluído</NeonButton>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {activeTab === 'atendimento' ? (
           <div className="flex h-full w-full overflow-hidden">
             
-            {/* COLUNA ESQUERDA: LISTA DE LEADS (ESTILO ZDG) */}
-            <div className="w-[350px] border-r border-white/5 flex flex-col bg-black/30 backdrop-blur-xl">
+            {/* COL 1: LEADS (ZDG STYLE) */}
+            <div className="w-[360px] border-r border-white/5 flex flex-col bg-black/30 backdrop-blur-xl">
               <div className="p-4 space-y-4 border-b border-white/5">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                    <div className="flex items-center gap-2">
                       <div className="bg-orange-500 p-1.5 rounded-lg"><Hash size={14} className="text-black"/></div>
-                      <span className="text-[10px] font-black uppercase tracking-tighter italic">Engine CRM</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest italic">Hub Atendimento</span>
                    </div>
                    <div className="flex items-center gap-2">
                       <button onClick={() => fetchChatsFromInstance(selectedInstanceName)} className="p-2 glass rounded-lg hover:text-orange-500 transition-all">
                         <RefreshCw size={14} className={isLoadingChats ? 'animate-spin' : ''} />
                       </button>
-                      <button className="p-2 glass rounded-lg hover:text-orange-500 transition-all"><Plus size={14}/></button>
+                      <button onClick={createInstance} className="p-2 glass rounded-lg hover:text-orange-500 transition-all"><Plus size={14}/></button>
                    </div>
                 </div>
 
-                <div className="space-y-3">
-                   <select 
-                     value={selectedInstanceName}
-                     onChange={(e) => setSelectedInstanceName(e.target.value)}
-                     className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 px-4 text-[10px] font-black uppercase outline-none focus:border-orange-500/40 transition-all"
-                   >
-                     <option value="">Selecione o Canal...</option>
-                     {instances.map(inst => (
-                       <option key={inst.id} value={inst.name} disabled={inst.status !== 'CONNECTED'}>
-                         {inst.status === 'CONNECTED' ? '🟢 ' : '🔴 '} {inst.name.replace(`${userPrefix}_`, '')}
-                       </option>
-                     ))}
-                   </select>
+                <div className="space-y-2">
+                   <div className="relative group">
+                      <select 
+                        value={selectedInstanceName}
+                        onChange={(e) => setSelectedInstanceName(e.target.value)}
+                        className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 px-4 text-[10px] font-black uppercase appearance-none outline-none focus:border-orange-500/40 transition-all"
+                      >
+                        <option value="">Selecione o Canal Ativo...</option>
+                        {instances.map(inst => (
+                          <option key={inst.id} value={inst.name} disabled={inst.status !== 'CONNECTED'}>
+                            {inst.status === 'CONNECTED' ? '🟢 ' : '🔴 '} {inst.name.replace(`${userPrefix}_`, '')}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-500 pointer-events-none" />
+                   </div>
 
                    <div className="relative">
                      <Search size={14} className="absolute left-3 top-2.5 text-gray-600" />
                      <input 
                        value={searchTerm}
                        onChange={e => setSearchTerm(e.target.value)}
-                       placeholder="Buscar contato ou ticket..." 
+                       placeholder="Buscar por nome ou fone..." 
                        className="w-full bg-white/[0.03] border border-white/5 rounded-xl py-2.5 px-10 text-[10px] uppercase font-bold outline-none focus:border-orange-500/40 transition-all" 
                      />
                      <button className="absolute right-3 top-2.5 text-orange-500"><ListFilter size={14}/></button>
@@ -323,8 +380,8 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                        className={`flex-1 py-3 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all relative ${activeFilter === f ? 'bg-orange-600/10 text-orange-500 border border-orange-500/20' : 'text-gray-500 hover:text-gray-300'}`}
                      >
                        {f}s
-                       <span className="ml-1.5 opacity-40">({tickets.filter(t => t.status === f).length})</span>
-                       {activeFilter === f && <motion.div layoutId="filter-indicator" className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-orange-500 rounded-full" />}
+                       <span className="ml-1 opacity-40">({tickets.filter(t => t.status === f).length})</span>
+                       {activeFilter === f && <motion.div layoutId="filter-active" className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-orange-500 rounded-full" />}
                      </button>
                    ))}
                 </div>
@@ -332,38 +389,33 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
                 {isLoadingChats ? (
-                  <div className="flex flex-col items-center justify-center py-12 opacity-30 gap-4">
+                  <div className="flex flex-col items-center justify-center py-20 opacity-30 gap-4">
                     <Loader2 className="animate-spin text-orange-500" />
-                    <span className="text-[8px] font-black uppercase tracking-[0.2em] italic">Varrendo Trilha Neural...</span>
+                    <span className="text-[8px] font-black uppercase tracking-widest italic">Sincronizando trilhas...</span>
                   </div>
                 ) : filteredTickets.length === 0 ? (
-                  <div className="text-center py-20 px-6 opacity-20 border-2 border-dashed border-white/5 rounded-3xl m-2">
+                  <div className="text-center py-20 px-6 opacity-10 border-2 border-dashed border-white/5 rounded-3xl m-2">
                     <AlertCircle size={32} className="mx-auto mb-4" />
-                    <p className="text-[10px] font-black uppercase tracking-widest italic">Nenhum lead detectado.</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest italic">Fila Vazia.</p>
                   </div>
                 ) : filteredTickets.map(ticket => (
                   <div 
                     key={ticket.id} 
-                    onClick={() => {
-                      setSelectedTicket(ticket);
-                      fetchMessagesForTicket(ticket);
-                    }}
-                    className={`p-4 rounded-2xl cursor-pointer transition-all border group ${selectedTicket?.id === ticket.id ? 'bg-orange-600/10 border-orange-500/20 shadow-xl' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
+                    onClick={() => { setSelectedTicket(ticket); fetchMessagesForTicket(ticket); }}
+                    className={`p-4 rounded-2xl cursor-pointer transition-all border ${selectedTicket?.id === ticket.id ? 'bg-orange-600/10 border-orange-500/20 shadow-xl' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
                   >
                     <div className="flex gap-4">
                       <div className="relative">
-                        <img src={ticket.avatar} className="w-12 h-12 rounded-2xl object-cover border border-white/10 group-hover:scale-105 transition-transform" />
+                        <img src={ticket.avatar} className="w-12 h-12 rounded-2xl object-cover border border-white/10" />
                         <div className="absolute -bottom-1 -right-1 bg-green-500 border-2 border-[#070707] w-3 h-3 rounded-full" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start mb-1">
+                        <div className="flex justify-between items-start">
                           <h4 className="text-[11px] font-black uppercase truncate italic tracking-tighter">{ticket.contactName}</h4>
                           <span className="text-[8px] text-gray-600 font-bold">{ticket.time}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 mb-2">
-                           <span className="text-[7px] text-orange-500 font-black uppercase tracking-widest">Ticket: {ticket.protocol}</span>
-                           <span className="w-1 h-1 bg-white/10 rounded-full"/>
-                           <span className="text-[7px] text-gray-600 font-bold truncate">Usuário: {userPrefix}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5 mb-2">
+                           <span className="text-[7px] text-orange-500 font-black uppercase tracking-widest">#{ticket.protocol}</span>
                         </div>
                         <p className="text-[9px] text-gray-500 font-medium truncate italic leading-none">"{ticket.lastMessage}"</p>
                       </div>
@@ -373,7 +425,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
               </div>
             </div>
 
-            {/* COLUNA CENTRAL: CHAT (ESTILO ZDG) */}
+            {/* COL 2: CHAT */}
             <div className="flex-1 flex flex-col relative bg-[#090909]">
               {selectedTicket ? (
                 <>
@@ -383,160 +435,175 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                        <div>
                           <h3 className="text-[14px] font-black uppercase italic tracking-tighter leading-tight">{selectedTicket.contactName}</h3>
                           <div className="flex items-center gap-2 mt-1">
-                             <span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest italic">Atribuído a: {userPrefix}</span>
+                             <span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest italic">ID: {selectedTicket.protocol}</span>
                              <span className="w-1 h-1 bg-orange-500 rounded-full" />
-                             <span className="text-[8px] text-orange-500 font-black uppercase tracking-widest italic">Ticket: {selectedTicket.protocol}</span>
+                             <span className="text-[8px] text-orange-500 font-black uppercase tracking-widest italic">Atribuído: {userPrefix}</span>
                           </div>
                        </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                        <button onClick={() => fetchMessagesForTicket(selectedTicket)} className="p-3 glass rounded-xl hover:text-orange-500 transition-all">
                         {isLoadingMessages ? <Loader2 size={16} className="animate-spin text-orange-500"/> : <RefreshCw size={16}/>}
                        </button>
                        <button className="p-3 glass rounded-xl hover:text-orange-500 transition-all"><Bot size={16}/></button>
-                       <button className="p-3 glass rounded-xl hover:text-orange-500 transition-all"><Power size={16}/></button>
-                       <div className="w-px h-8 bg-white/5 mx-2" />
                        <NeonButton className="!px-5 !py-2.5 !text-[9px] !rounded-xl">Resolver</NeonButton>
                     </div>
                   </header>
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar" style={{ backgroundImage: `url('https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/whatsapp-bg.png')`, backgroundSize: '400px', backgroundRepeat: 'repeat', opacity: 1 }}>
-                    <div className="flex justify-center mb-8">
-                       <span className="bg-black/60 backdrop-blur-md border border-white/10 px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest text-gray-500 italic">Início do Atendimento #{selectedTicket.protocol}</span>
-                    </div>
-
-                    {selectedTicket.messages.map((msg, i) => {
-                       // Lógica simples de separador de data
-                       const isNewDay = i === 0 || i % 10 === 0; 
-                       return (
-                        <React.Fragment key={msg.id || i}>
-                          {isNewDay && (
-                            <div className="flex justify-center my-8">
-                               <div className="h-px bg-white/5 flex-1 max-w-[100px]" />
-                               <span className="mx-4 text-[8px] font-black uppercase tracking-widest text-gray-600 italic">Atendimento {selectedTicket.protocol}</span>
-                               <div className="h-px bg-white/5 flex-1 max-w-[100px]" />
-                            </div>
-                          )}
-                          <div className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[75%] p-4 rounded-3xl shadow-2xl relative transition-all hover:scale-[1.01] ${msg.sender === 'me' ? 'bg-orange-600/90 text-white rounded-tr-none border border-orange-500/20' : 'bg-white/5 text-gray-200 border border-white/5 rounded-tl-none backdrop-blur-xl'}`}>
-                              <p className="text-[12px] font-medium leading-relaxed tracking-tight">{msg.text}</p>
-                              <div className={`text-[8px] mt-2 flex items-center gap-1.5 ${msg.sender === 'me' ? 'text-orange-200 justify-end' : 'text-gray-500'}`}>
-                                {msg.time}
-                                {msg.sender === 'me' && <CheckCircle2 size={10} className="text-blue-400" />}
-                              </div>
-                            </div>
+                    {selectedTicket.messages.map((msg, i) => (
+                      <div key={msg.id || i} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] p-4 rounded-3xl shadow-2xl relative ${msg.sender === 'me' ? 'bg-orange-600/90 text-white rounded-tr-none border border-orange-500/20' : 'bg-white/5 text-gray-200 border border-white/5 rounded-tl-none backdrop-blur-xl'}`}>
+                          <p className="text-[12px] font-medium leading-relaxed tracking-tight">{msg.text}</p>
+                          <div className={`text-[8px] mt-2 flex items-center gap-1.5 ${msg.sender === 'me' ? 'text-orange-200 justify-end' : 'text-gray-500'}`}>
+                            {msg.time}
+                            {msg.sender === 'me' && <CheckCircle2 size={10} className="text-blue-400" />}
                           </div>
-                        </React.Fragment>
-                       );
-                    })}
+                        </div>
+                      </div>
+                    ))}
                     <div ref={chatEndRef} />
                   </div>
 
                   <div className="p-5 border-t border-white/5 bg-black/60 backdrop-blur-2xl">
-                    <div className="flex items-center gap-4 bg-white/[0.03] border border-white/10 rounded-2xl p-2 px-5 shadow-inner group focus-within:border-orange-500/40 transition-all">
+                    <div className="flex items-center gap-4 bg-white/[0.03] border border-white/10 rounded-2xl p-2 px-5 group focus-within:border-orange-500/40 transition-all">
                        <button className="text-gray-600 hover:text-orange-500 transition-all p-2"><Paperclip size={20} /></button>
                        <button className="text-gray-600 hover:text-orange-500 transition-all p-2"><Smile size={20} /></button>
                        <input 
                          value={messageInput}
                          onChange={e => setMessageInput(e.target.value)}
                          onKeyPress={e => e.key === 'Enter' && handleSendMessage()}
-                         placeholder="Digite aqui para processar resposta..." 
-                         className="flex-1 bg-transparent border-none outline-none text-[12px] font-bold py-3 text-white placeholder:text-gray-700" 
+                         placeholder="Resposta neural..." 
+                         className="flex-1 bg-transparent border-none outline-none text-[12px] font-bold py-3 text-white" 
                        />
                        <button className="text-gray-600 hover:text-orange-500 transition-all p-2"><Mic size={20} /></button>
-                       <button 
-                         onClick={handleSendMessage}
-                         disabled={!messageInput.trim()}
-                         className="bg-orange-600 text-black p-3 rounded-xl hover:scale-110 active:scale-95 transition-all shadow-lg shadow-orange-600/30 disabled:opacity-50 disabled:grayscale"
-                       >
+                       <button onClick={handleSendMessage} disabled={!messageInput.trim()} className="bg-orange-600 text-black p-3 rounded-xl hover:scale-110 active:scale-95 transition-all shadow-lg disabled:opacity-50">
                          <Send size={20} />
                        </button>
                     </div>
                   </div>
                 </>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-12 relative overflow-hidden">
-                   <div className="absolute inset-0 grid-engine opacity-5"></div>
-                   <MessageCircle size={100} className="mb-8 text-orange-500/20 animate-pulse" />
-                   <h2 className="text-3xl font-black uppercase italic tracking-tighter leading-none">Hub de <span className="text-orange-500">Atendimento.</span></h2>
-                   <p className="text-[10px] uppercase font-bold tracking-[0.4em] mt-4 text-gray-700 italic">Selecione um lead no painel lateral para iniciar o fluxo neural.</p>
+                <div className="flex-1 flex flex-col items-center justify-center opacity-10">
+                   <MessageCircle size={100} className="mb-8 text-orange-500" />
+                   <h2 className="text-3xl font-black uppercase italic">Hub Atendimento</h2>
+                   <p className="text-[10px] uppercase font-bold tracking-[0.4em] mt-4">Escolha um lead para começar.</p>
                 </div>
               )}
             </div>
 
-            {/* COLUNA DIREITA: DADOS DO CONTATO (ESTILO ZDG) */}
+            {/* COL 3: INFO */}
             <div className="w-[320px] border-l border-white/5 bg-black/40 p-6 overflow-y-auto custom-scrollbar space-y-8 backdrop-blur-2xl">
-              <div className="flex justify-between items-center mb-4">
-                 <h2 className="text-[12px] font-black uppercase italic tracking-widest text-gray-500">Dados do Contato</h2>
-                 <button className="text-[8px] font-black uppercase tracking-widest text-orange-500 hover:underline">Reduzir Menu</button>
+              <div className="flex justify-between items-center">
+                 <h2 className="text-[12px] font-black uppercase italic tracking-widest text-gray-500">Dados Lead</h2>
+                 <button className="text-[8px] font-black uppercase tracking-widest text-orange-500">Ocultar</button>
               </div>
 
               <div className="text-center space-y-6">
                 <div className="relative group inline-block">
-                   <img src={selectedTicket?.avatar || `https://ui-avatars.com/api/?name=?&background=111&color=555`} className="w-32 h-32 rounded-[2.5rem] object-cover border-2 border-orange-500/20 shadow-2xl transition-all group-hover:scale-105" />
-                   <span className="absolute -top-2 -right-2 bg-orange-600 text-black text-[8px] font-black px-3 py-1 rounded-full uppercase italic shadow-xl">Handshake</span>
+                   <img src={selectedTicket?.avatar || `https://ui-avatars.com/api/?name=?&background=111&color=555`} className="w-32 h-32 rounded-[2.5rem] object-cover border-2 border-orange-500/20 shadow-2xl" />
+                   <span className="absolute -top-2 -right-2 bg-orange-600 text-black text-[8px] font-black px-3 py-1 rounded-full uppercase italic">Vip Flow</span>
                 </div>
                 <div>
                   <h3 className="text-xl font-black uppercase italic tracking-tighter leading-tight">{selectedTicket?.contactName || '---'}</h3>
-                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1 italic">+{selectedTicket?.contactPhone || 'Sincronizando...'}</p>
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1">+{selectedTicket?.contactPhone || 'Sincronizando...'}</p>
                 </div>
                 <div className="flex gap-2">
-                   <GlassButton className="flex-1 !py-2 !text-[8px] !rounded-xl">Editar</GlassButton>
+                   <GlassButton className="flex-1 !py-2 !text-[8px] !rounded-xl">Editar Contato</GlassButton>
                 </div>
               </div>
 
-              <div className="space-y-6">
-                 <div className="flex items-center gap-3 text-[9px] font-black text-orange-500 uppercase tracking-widest italic border-b border-white/5 pb-2">
-                   <History size={14}/> Logs & Metadados
+              <div className="space-y-6 pt-4 border-t border-white/5">
+                 <div className="flex items-center gap-3 text-[9px] font-black text-orange-500 uppercase tracking-widest italic pb-2">
+                   <History size={14}/> Histórico Logs
                  </div>
                  
                  <div className="space-y-4">
                     <GlassCard className="!p-4 space-y-3 !bg-white/[0.01] border-white/5">
                        <div className="flex justify-between items-center text-[9px]">
-                          <span className="text-gray-600 uppercase font-black tracking-widest">Protocolo</span>
+                          <span className="text-gray-600 uppercase font-black">Protocolo</span>
                           <span className="text-white font-black italic">#{selectedTicket?.protocol || '---'}</span>
                        </div>
                        <div className="flex justify-between items-center text-[9px]">
-                          <span className="text-gray-600 uppercase font-black tracking-widest">Iniciado em</span>
+                          <span className="text-gray-600 uppercase font-black">Abertura</span>
                           <span className="text-white font-black italic">{selectedTicket?.time || '---'}</span>
                        </div>
                        <div className="flex justify-between items-center text-[9px]">
-                          <span className="text-gray-600 uppercase font-black tracking-widest">Status Fluxo</span>
-                          <span className="text-green-500 font-black uppercase italic tracking-tighter">Sincronizado</span>
+                          <span className="text-gray-600 uppercase font-black">Status IA</span>
+                          <span className="text-green-500 font-black uppercase italic">Monitorado</span>
                        </div>
                     </GlassCard>
-
-                    <div className="grid grid-cols-2 gap-2">
-                       <GlassButton className="!py-3 !px-2 flex flex-col items-center gap-2 !bg-white/[0.02]">
-                          <MessageCircle size={14} className="text-blue-500"/>
-                          <span className="text-[7px] font-black">Conversas</span>
-                       </GlassButton>
-                       <GlassButton className="!py-3 !px-2 flex flex-col items-center gap-2 !bg-white/[0.02]">
-                          <ClipboardList size={14} className="text-orange-500"/>
-                          <span className="text-[7px] font-black">Logs Oper.</span>
-                       </GlassButton>
-                    </div>
                  </div>
 
-                 <div className="flex items-center gap-3 text-[9px] font-black text-orange-500 uppercase tracking-widest italic border-b border-white/5 pb-2">
-                   <Star size={14}/> Avaliação IA
+                 <div className="flex items-center gap-3 text-[9px] font-black text-orange-500 uppercase tracking-widest italic pb-2">
+                   <Star size={14}/> Sentimento
                  </div>
                  <GlassCard className="!p-4 !bg-white/[0.01] border-white/5 text-center">
-                    <div className="flex justify-center gap-1.5 text-gray-800 mb-2">
-                       {[1,2,3,4,5].map(s => <Star key={s} size={16} className={s <= 4 ? 'text-orange-500 fill-orange-500' : ''} />)}
+                    <div className="flex justify-center gap-1.5 text-orange-500 mb-2">
+                       {[1,2,3,4,5].map(s => <Star key={s} size={16} fill={s <= 4 ? '#ff7300' : 'transparent'} />)}
                     </div>
-                    <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Lead de Alta Conversão</p>
+                    <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest italic">Interação de Alta Conversão</p>
                  </GlassCard>
               </div>
             </div>
           </div>
+        ) : activeTab === 'evolution' ? (
+          <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
+            <header className="flex justify-between items-end mb-12">
+               <div>
+                  <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">Canais <span className="text-orange-500">Evolution.</span></h2>
+                  <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest italic mt-1">Gestão de frota e instâncias de mensageria neural.</p>
+               </div>
+               <div className="flex gap-4">
+                  <GlassButton onClick={fetchInstances} className="!px-4 hover:!text-orange-500"><RefreshCw size={14} /></GlassButton>
+                  <NeonButton onClick={createInstance} disabled={isCreatingInstance} className="!px-6 !py-3">
+                    {isCreatingInstance ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} className="mr-2"/> Instalar Canal</>}
+                  </NeonButton>
+               </div>
+            </header>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {instances.length === 0 ? (
+                 <div className="col-span-full py-20 text-center opacity-10 border-2 border-dashed border-white/5 rounded-3xl">
+                    <Smartphone size={48} className="mx-auto mb-4" />
+                    <p className="text-sm font-black uppercase italic">Nenhum canal ativo no cluster.</p>
+                 </div>
+               ) : instances.map(inst => (
+                 <GlassCard key={inst.id} className="!p-6 space-y-6 relative group">
+                    <div className="flex justify-between items-start">
+                       <div className={`p-4 rounded-2xl ${inst.status === 'CONNECTED' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                          <Smartphone size={24} />
+                       </div>
+                       <div className="flex gap-2">
+                          <button onClick={() => deleteInstance(inst.name)} className="p-2 text-gray-700 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"><Trash size={16}/></button>
+                       </div>
+                    </div>
+
+                    <div className="space-y-1">
+                       <h3 className="text-lg font-black uppercase italic tracking-tighter truncate">{inst.name.replace(`${userPrefix}_`, '')}</h3>
+                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{inst.phone}</p>
+                    </div>
+
+                    <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${inst.status === 'CONNECTED' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                          <span className={`text-[8px] font-black uppercase tracking-widest ${inst.status === 'CONNECTED' ? 'text-green-500' : 'text-red-500'}`}>{inst.status}</span>
+                       </div>
+                       {inst.status !== 'CONNECTED' ? (
+                          <NeonButton onClick={() => connectInstance(inst.name)} className="!px-3 !py-1.5 !text-[8px] shadow-none">Conectar</NeonButton>
+                       ) : (
+                          <div className="text-[8px] font-black uppercase tracking-widest text-gray-700">Canal Ativo</div>
+                       )}
+                    </div>
+                 </GlassCard>
+               ))}
+            </div>
+          </div>
         ) : (
-          <div className="flex-1 p-8 overflow-y-auto custom-scrollbar">
-             <div className="text-center py-20 opacity-20">
-                <Brain size={60} className="mx-auto mb-4 text-orange-500" />
-                <h2 className="text-2xl font-black uppercase italic">Cluster {activeTab} em Integração Neural</h2>
-                <p className="text-sm font-bold uppercase tracking-widest mt-2">Nesta versão, foque no Atendimento CRM.</p>
-             </div>
+          <div className="flex-1 flex flex-col items-center justify-center p-20 text-center opacity-10">
+             <Brain size={80} className="mb-6 text-orange-500" />
+             <h2 className="text-3xl font-black uppercase italic">Engine {activeTab}</h2>
+             <p className="text-[10px] uppercase font-bold tracking-[0.4em] mt-4 italic">Sincronizando com cluster neural v3.1...</p>
           </div>
         )}
       </main>
