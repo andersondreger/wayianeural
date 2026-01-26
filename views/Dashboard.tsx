@@ -63,30 +63,44 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
     } catch (err) { console.error("Erro ao carregar instâncias:", err); }
   };
 
-  // BUSCA DE CHATS E CONTATOS (UNIFICADA)
+  // HELPER PARA EXTRAIR ARRAYS DE RESPOSTAS COMPLEXAS DA API
+  const extractArray = (data: any): any[] => {
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') return [];
+    if (Array.isArray(data.chats)) return data.chats;
+    if (Array.isArray(data.contacts)) return data.contacts;
+    if (Array.isArray(data.data)) return data.data;
+    if (data.instance && Array.isArray(data.instance.chats)) return data.instance.chats;
+    // Tenta encontrar qualquer propriedade que seja array
+    for (const key in data) {
+      if (Array.isArray(data[key])) return data[key];
+    }
+    return [];
+  };
+
+  // BUSCA DE CHATS E CONTATOS (MOTOR DE ATENDIMENTO)
   const fetchChatsFromInstance = async (instanceName: string) => {
     if (!instanceName) return;
     setIsLoadingChats(true);
     try {
       // 1. Tentar buscar Chats (Conversas Ativas)
       const resChats = await fetch(`${getBaseUrl()}/chat/fetchChats/${instanceName}`, { headers: getHeaders() });
-      let chatsRaw = [];
-      
+      let rawData = [];
       if (resChats.ok) {
-        const data = await resChats.json();
-        chatsRaw = Array.isArray(data) ? data : (data.chats || data.data || []);
+        const json = await resChats.json();
+        rawData = extractArray(json);
       }
 
-      // 2. Se não houver chats, buscar Contatos (Agenda) como fallback
-      if (chatsRaw.length === 0) {
+      // 2. Fallback: Se não houver chats, buscar na Agenda (Contacts)
+      if (rawData.length === 0) {
         const resContacts = await fetch(`${getBaseUrl()}/contact/fetchContacts/${instanceName}`, { headers: getHeaders() });
         if (resContacts.ok) {
-          const dataContacts = await resContacts.json();
-          chatsRaw = Array.isArray(dataContacts) ? dataContacts : (dataContacts.contacts || dataContacts.data || []);
+          const jsonContacts = await resContacts.json();
+          rawData = extractArray(jsonContacts);
         }
       }
 
-      const mappedTickets: Ticket[] = chatsRaw
+      const mappedTickets: Ticket[] = rawData
         .filter((item: any) => item.id || item.remoteJid || item.jid)
         .map((item: any) => {
           const jid = item.id || item.remoteJid || item.jid;
@@ -97,10 +111,10 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
             id: jid,
             contactName: name,
             contactPhone: phone,
-            lastMessage: item.lastMessage?.message?.conversation || item.lastMessage?.content || 'Sem mensagens recentes',
+            lastMessage: item.lastMessage?.message?.conversation || item.lastMessage?.content || 'Conversa iniciada',
             sentiment: 'neutral',
-            time: item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
-            status: 'aberto',
+            time: item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'aberto', // Garante que caia no filtro padrão
             unreadCount: item.unreadCount || 0,
             assignedTo: instanceName,
             protocol: `WA-${Math.floor(Math.random() * 90000) + 10000}`,
@@ -109,15 +123,15 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
           };
         });
 
-      // Remover duplicados por ID
-      const uniqueTickets = mappedTickets.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
-      setTickets(uniqueTickets);
+      // Remove duplicados e atualiza estado
+      const finalTickets = mappedTickets.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+      setTickets(finalTickets);
       
-      if (uniqueTickets.length > 0 && (!selectedTicket || !uniqueTickets.find(t => t.id === selectedTicket.id))) {
-        setSelectedTicket(uniqueTickets[0]);
+      if (finalTickets.length > 0 && (!selectedTicket || !finalTickets.find(t => t.id === selectedTicket.id))) {
+        setSelectedTicket(finalTickets[0]);
       }
     } catch (err) {
-      console.error("Erro na sincronização neural:", err);
+      console.error("Erro crítico na sincronização:", err);
     } finally {
       setIsLoadingChats(false);
     }
@@ -131,16 +145,16 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
       const res = await fetch(`${getBaseUrl()}/chat/fetchMessages/${selectedInstanceName}`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ remoteJid: ticket.id, count: 20 })
+        body: JSON.stringify({ remoteJid: ticket.id, count: 25 })
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const messagesRaw = Array.isArray(data) ? data : (data.messages || data.data || []);
+        const json = await res.json();
+        const messagesRaw = extractArray(json);
         
         const mappedMessages: Message[] = messagesRaw.reverse().map((m: any) => ({
           id: m.key?.id || Math.random().toString(),
-          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia não suportada",
+          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia recebida",
           sender: m.key?.fromMe ? 'me' : 'contact',
           time: m.messageTimestamp ? new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
           status: 'read',
@@ -152,7 +166,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
         setTickets(prev => prev.map(t => t.id === ticket.id ? updatedTicket : t));
       }
     } catch (err) {
-      console.error("Erro ao carregar mensagens:", err);
+      console.error("Erro ao carregar histórico:", err);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -191,7 +205,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
         body: JSON.stringify({
           number: selectedTicket.id,
           text: currentMsg,
-          delay: 1000
+          delay: 500
         })
       });
 
@@ -256,18 +270,17 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
       <main className="flex-1 flex flex-col relative overflow-hidden bg-[#070707]">
         {activeTab === 'atendimento' ? (
           <div className="flex h-full w-full overflow-hidden">
-            {/* COLUNA 1: LISTA DE TICKETS */}
             <div className="w-80 border-r border-white/5 flex flex-col bg-black/20">
               <div className="p-4 space-y-4">
                 <div className="space-y-1.5">
-                   <label className="text-[7px] font-black text-gray-600 uppercase tracking-widest px-1">Selecione o Canal (Chip)</label>
+                   <label className="text-[7px] font-black text-gray-600 uppercase tracking-widest px-1">Selecione o Chip Ativo</label>
                    <div className="relative group">
                       <select 
                         value={selectedInstanceName}
                         onChange={(e) => setSelectedInstanceName(e.target.value)}
                         className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 px-4 text-[10px] font-black uppercase appearance-none outline-none focus:border-orange-500/40"
                       >
-                        <option value="">Selecione a Instância...</option>
+                        <option value="">Aguardando seleção...</option>
                         {instances.map(inst => (
                           <option key={inst.id} value={inst.name} disabled={inst.status !== 'CONNECTED'}>
                             {inst.status !== 'CONNECTED' ? '🔴 ' : '🟢 '}
@@ -314,8 +327,8 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                 ) : tickets.length === 0 ? (
                   <div className="text-center py-12 px-6 space-y-3 opacity-30">
                     <AlertCircle className="mx-auto text-gray-700" size={32} />
-                    <p className="text-[9px] font-black uppercase leading-tight italic">Nenhum lead ou contato encontrado.</p>
-                    <GlassButton onClick={() => fetchChatsFromInstance(selectedInstanceName)} className="!px-4 !py-2 !text-[8px]">Forçar Atualização</GlassButton>
+                    <p className="text-[9px] font-black uppercase leading-tight italic">Nenhum lead encontrado neste canal.</p>
+                    <GlassButton onClick={() => fetchChatsFromInstance(selectedInstanceName)} className="!px-4 !py-2 !text-[8px]">Sincronizar Agora</GlassButton>
                   </div>
                 ) : tickets.filter(t => t.status === activeFilter).map(ticket => (
                   <div 
@@ -338,7 +351,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                         </div>
                         <p className="text-[9px] text-gray-400 font-medium truncate mb-2">{ticket.lastMessage}</p>
                         <div className="flex items-center justify-between">
-                           <span className="text-[8px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black uppercase tracking-widest italic">Ativo</span>
+                           <span className="text-[8px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black uppercase tracking-widest italic">Conectado</span>
                            {ticket.unreadCount > 0 && <span className="bg-green-500 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">{ticket.unreadCount}</span>}
                         </div>
                       </div>
@@ -348,7 +361,6 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
               </div>
             </div>
 
-            {/* COLUNA 2: CHAT AREA */}
             <div className="flex-1 flex flex-col relative bg-[#0a0a0a]">
               {selectedTicket ? (
                 <>
@@ -357,7 +369,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                        <img src={selectedTicket.avatar} className="w-10 h-10 rounded-full border border-white/10" />
                        <div>
                           <h3 className="text-[12px] font-black uppercase italic tracking-tighter">{selectedTicket.contactName}</h3>
-                          <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest italic">Canal: {selectedInstanceName.replace(`${userPrefix}_`, '')} | {selectedTicket.id}</p>
+                          <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest italic">ID: {selectedTicket.id}</p>
                        </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -365,7 +377,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                         {isLoadingMessages ? <Loader2 size={14} className="animate-spin text-orange-500"/> : <RefreshCw size={14}/>}
                        </GlassButton>
                        <GlassButton className="!p-2"><Bot size={14}/></GlassButton>
-                       <NeonButton className="!px-3 !py-1.5 !text-[8px]">Concluir</NeonButton>
+                       <NeonButton className="!px-3 !py-1.5 !text-[8px]">Encerrar</NeonButton>
                     </div>
                   </header>
 
@@ -373,12 +385,12 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                     {isLoadingMessages ? (
                       <div className="flex flex-col items-center justify-center h-full opacity-20 space-y-4">
                         <Loader2 className="animate-spin text-orange-500" size={32} />
-                        <p className="text-[10px] font-black uppercase tracking-widest italic">Recuperando trilhas de conversa...</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Recuperando trilhas neurais...</p>
                       </div>
                     ) : selectedTicket.messages.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full opacity-20 space-y-4">
                         <History size={48} />
-                        <p className="text-[10px] font-black uppercase tracking-widest italic">Sem histórico recente.</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Sem histórico nesta sessão.</p>
                       </div>
                     ) : (
                       selectedTicket.messages.map((msg, i) => (
@@ -422,12 +434,11 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                 <div className="flex-1 flex flex-col items-center justify-center text-center opacity-20 p-12">
                    <MessageCircle size={80} className="mb-6 text-orange-500" />
                    <h2 className="text-2xl font-black uppercase italic tracking-tighter">Cluster de CRM</h2>
-                   <p className="text-[10px] uppercase font-bold tracking-[0.3em] mt-2">Escolha um contato para iniciar o processamento.</p>
+                   <p className="text-[10px] uppercase font-bold tracking-[0.3em] mt-2">Escolha um lead para iniciar o atendimento.</p>
                 </div>
               )}
             </div>
 
-            {/* COLUNA 3: DETALHES DO CONTATO */}
             <div className="w-[340px] border-l border-white/5 bg-black/40 p-6 overflow-y-auto custom-scrollbar space-y-6">
               <div className="text-center space-y-4">
                 <div className="relative w-24 h-24 mx-auto">
@@ -438,11 +449,11 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                   <h3 className="text-lg font-black uppercase italic tracking-tighter">{selectedTicket?.contactName}</h3>
                   <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">+{selectedTicket?.contactPhone}</p>
                 </div>
-                <GlassButton className="w-full !py-2 !text-[9px]">Histórico do Lead</GlassButton>
+                <GlassButton className="w-full !py-2 !text-[9px]">Histórico Completo</GlassButton>
               </div>
 
               <div className="space-y-4">
-                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><Info size={12}/> Metadados Neurais</div>
+                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><Info size={12}/> Metadados do Lead</div>
                  <GlassCard className="!p-4 space-y-3 !bg-white/[0.01]">
                     <div className="flex justify-between items-center text-[9px]">
                        <span className="text-gray-500 uppercase font-black">Status Global</span>
