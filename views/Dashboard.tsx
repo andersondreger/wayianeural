@@ -8,7 +8,7 @@ import {
   Plus, QrCode, Brain, MoreVertical, Clock, Loader2, 
   RefreshCw, Trash2, CheckCircle2, Paperclip, Smile,
   Mic, UserCircle, Bot, Phone, MessageCircle, ChevronDown,
-  ChevronUp, History, ClipboardList, Star
+  ChevronUp, History, ClipboardList, Star, AlertCircle
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance, Ticket, Message } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -18,48 +18,16 @@ import { supabase } from '../lib/supabase';
 
 const ADMIN_MASTER = 'dregerr.anderson@gmail.com';
 
-const MOCK_TICKETS: Ticket[] = [
-  {
-    id: '868',
-    contactName: 'Eleonora',
-    contactPhone: '5512982166611',
-    lastMessage: 'Meu ticket é 27292 gostaria s...',
-    sentiment: 'neutral',
-    time: '18:54',
-    status: 'resolvido',
-    unreadCount: 5,
-    assignedTo: 'Eleonora',
-    protocol: '20250224-868',
-    avatar: 'https://i.pravatar.cc/150?u=eleonora',
-    messages: [
-      { id: '1', text: 'Opa', sender: 'contact', time: '10:54', status: 'read', type: 'text' },
-      { id: '2', text: 'Solicitação: Teste 123', sender: 'contact', time: '18:54', status: 'read', type: 'text' },
-      { id: '3', text: 'Ticket: 4', sender: 'contact', time: '09:47', status: 'read', type: 'text' }
-    ]
-  },
-  {
-    id: '865',
-    contactName: 'Artur Mendes',
-    contactPhone: '5545999045858',
-    lastMessage: 'Gostaria de saber o valor do plano',
-    sentiment: 'happy',
-    time: '10:30',
-    status: 'aberto',
-    unreadCount: 0,
-    assignedTo: 'Ninguém',
-    protocol: '20250224-865',
-    avatar: 'https://i.pravatar.cc/150?u=artur',
-    messages: []
-  }
-];
-
 export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; onLogout: () => void; onCheckout: () => void }) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('atendimento');
-  const [tickets, setTickets] = useState<Ticket[]>(MOCK_TICKETS);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [activeFilter, setActiveFilter] = useState<'aberto' | 'pendente' | 'resolvido'>('aberto');
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
+  const [selectedInstanceName, setSelectedInstanceName] = useState<string>('');
   const [messageInput, setMessageInput] = useState('');
+  const [isLoadingChats, setIsLoadingChats] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const [evolutionUrl] = useState('https://evo2.wayiaflow.com.br'); 
@@ -71,6 +39,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
   const getHeaders = () => ({ 'apikey': evolutionApiKey, 'Content-Type': 'application/json' });
   const getBaseUrl = () => evolutionUrl.endsWith('/') ? evolutionUrl.slice(0, -1) : evolutionUrl;
 
+  // BUSCA DE INSTÂNCIAS (CHIPS)
   const fetchInstances = async () => {
     try {
       const res = await fetch(`${getBaseUrl()}/instance/fetchInstances`, { headers: getHeaders() });
@@ -80,37 +49,169 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
         const mapped = list.map((inst: any) => ({
           id: inst.instanceId || inst.name,
           name: inst.instanceName || inst.name,
-          status: (inst.status === 'open' || inst.connectionStatus === 'open') ? 'CONNECTED' : 'DISCONNECTED',
+          status: (inst.status === 'open' || inst.connectionStatus === 'open' || inst.state === 'open' || inst.connectionStatus === 'CONNECTED') ? 'CONNECTED' : 'DISCONNECTED',
           phone: inst.ownerJid?.split('@')[0] || 'Desconectado'
         })).filter((inst: any) => isAdminMaster || inst.name.startsWith(`${userPrefix}_`));
+        
         setInstances(mapped);
+        
+        if (!selectedInstanceName || !mapped.find(i => i.name === selectedInstanceName)) {
+          const firstConnected = mapped.find(i => i.status === 'CONNECTED');
+          if (firstConnected) setSelectedInstanceName(firstConnected.name);
+        }
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("Erro ao carregar instâncias:", err); }
+  };
+
+  // BUSCA DE CHATS REAIS (IMPORTAR CONTATOS) - MOTOR DE SINCRONIZAÇÃO CORRIGIDO
+  const fetchChatsFromInstance = async (instanceName: string) => {
+    if (!instanceName) return;
+    setIsLoadingChats(true);
+    try {
+      // Endpoint Evolution v2 para buscar conversas
+      const res = await fetch(`${getBaseUrl()}/chat/fetchChats/${instanceName}`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Suporte a múltiplas estruturas de retorno da Evolution API
+        let chatsRaw = [];
+        if (Array.isArray(data)) {
+          chatsRaw = data;
+        } else if (data.chats && Array.isArray(data.chats)) {
+          chatsRaw = data.chats;
+        } else if (data.instance && data.instance.chats) {
+          chatsRaw = data.instance.chats;
+        } else if (typeof data === 'object' && data !== null) {
+          // Tenta encontrar qualquer propriedade que seja um array (fallback extremo)
+          const possibleArray = Object.values(data).find(v => Array.isArray(v));
+          if (possibleArray) chatsRaw = possibleArray as any[];
+        }
+
+        const mappedTickets: Ticket[] = chatsRaw
+          .filter((chat: any) => chat.id || chat.remoteJid)
+          .map((chat: any) => {
+            const jid = chat.id || chat.remoteJid;
+            const phone = jid.split('@')[0];
+            const name = chat.pushName || chat.name || phone;
+            
+            return {
+              id: jid,
+              contactName: name,
+              contactPhone: phone,
+              lastMessage: chat.lastMessage?.message?.conversation || chat.lastMessage?.content || 'Mídia ou Mensagem do Sistema',
+              sentiment: 'neutral',
+              time: chat.updatedAt ? new Date(chat.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
+              status: 'aberto',
+              unreadCount: chat.unreadCount || 0,
+              assignedTo: instanceName,
+              protocol: `WA-${Math.floor(Math.random() * 90000) + 10000}`,
+              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ff7300&color=fff`,
+              messages: []
+            };
+          });
+
+        setTickets(mappedTickets);
+        
+        // Se houver contatos e nada selecionado, seleciona o primeiro
+        if (mappedTickets.length > 0 && (!selectedTicket || !mappedTickets.find(t => t.id === selectedTicket.id))) {
+          setSelectedTicket(mappedTickets[0]);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao sincronizar contatos:", err);
+    } finally {
+      setIsLoadingChats(false);
+    }
+  };
+
+  // CARREGAR HISTÓRICO REAL
+  const fetchMessagesForTicket = async (ticket: Ticket) => {
+    if (!selectedInstanceName || !ticket.id) return;
+    setIsLoadingMessages(true);
+    try {
+      const res = await fetch(`${getBaseUrl()}/chat/fetchMessages/${selectedInstanceName}`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ remoteJid: ticket.id, count: 20 })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const messagesRaw = Array.isArray(data) ? data : (data.messages || []);
+        
+        const mappedMessages: Message[] = messagesRaw.reverse().map((m: any) => ({
+          id: m.key.id,
+          text: m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || "Mídia ou Tipo não suportado",
+          sender: m.key.fromMe ? 'me' : 'contact',
+          time: new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'read',
+          type: 'text'
+        }));
+
+        const updatedTicket = { ...ticket, messages: mappedMessages };
+        setSelectedTicket(updatedTicket);
+        setTickets(prev => prev.map(t => t.id === ticket.id ? updatedTicket : t));
+      }
+    } catch (err) {
+      console.error("Erro ao carregar mensagens:", err);
+    } finally {
+      setIsLoadingMessages(false);
+    }
   };
 
   useEffect(() => {
     fetchInstances();
-    if (tickets.length > 0 && !selectedTicket) setSelectedTicket(tickets[0]);
+    const timer = setInterval(fetchInstances, 30000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedTicket?.messages]);
+    if (selectedInstanceName && activeTab === 'atendimento') {
+      fetchChatsFromInstance(selectedInstanceName);
+    }
+  }, [selectedInstanceName, activeTab]);
 
-  const handleSendMessage = () => {
-    if (!messageInput.trim() || !selectedTicket) return;
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: messageInput,
-      sender: 'me',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sent',
-      type: 'text'
-    };
-    const updated = { ...selectedTicket, messages: [...selectedTicket.messages, newMessage] };
-    setSelectedTicket(updated);
-    setTickets(tickets.map(t => t.id === updated.id ? updated : t));
+  useEffect(() => {
+    if (selectedTicket && selectedTicket.messages.length === 0) {
+      fetchMessagesForTicket(selectedTicket);
+    }
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [selectedTicket?.id]);
+
+  // ENVIO DE MENSAGEM
+  const handleSendMessage = async () => {
+    if (!messageInput.trim() || !selectedTicket || !selectedInstanceName) return;
+
+    const currentMsg = messageInput;
     setMessageInput('');
+
+    try {
+      const res = await fetch(`${getBaseUrl()}/message/sendText/${selectedInstanceName}`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          number: selectedTicket.id,
+          text: currentMsg,
+          delay: 1000
+        })
+      });
+
+      if (res.ok) {
+        const newMessage: Message = {
+          id: Date.now().toString(),
+          text: currentMsg,
+          sender: 'me',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'sent',
+          type: 'text'
+        };
+        const updated = { ...selectedTicket, messages: [...selectedTicket.messages, newMessage] };
+        setSelectedTicket(updated);
+        setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
+      }
+    } catch (err) {
+      console.error("Erro ao enviar mensagem:", err);
+    }
   };
 
   const SidebarBtn = ({ id, icon: Icon, label, isAdmin = false }: { id: DashboardTab, icon: any, label: string, isAdmin?: boolean }) => {
@@ -159,16 +260,35 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
             {/* COLUNA 1: LISTA DE TICKETS */}
             <div className="w-80 border-r border-white/5 flex flex-col bg-black/20">
               <div className="p-4 space-y-4">
+                <div className="space-y-1.5">
+                   <label className="text-[7px] font-black text-gray-600 uppercase tracking-widest px-1">Canal de Sincronização</label>
+                   <div className="relative group">
+                      <select 
+                        value={selectedInstanceName}
+                        onChange={(e) => setSelectedInstanceName(e.target.value)}
+                        className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 px-4 text-[10px] font-black uppercase appearance-none outline-none focus:border-orange-500/40"
+                      >
+                        <option value="">Selecione o Chip...</option>
+                        {instances.map(inst => (
+                          <option key={inst.id} value={inst.name} disabled={inst.status !== 'CONNECTED'}>
+                            {inst.status !== 'CONNECTED' ? '🔴 ' : '🟢 '}
+                            {inst.name.replace(`${userPrefix}_`, '')}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={12} className="absolute right-3 top-3 text-gray-500 pointer-events-none" />
+                   </div>
+                </div>
+
                 <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
-                    <div className="bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors"><Search size={14} className="text-gray-400" /></div>
-                    <div className="bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors"><Filter size={14} className="text-gray-400" /></div>
-                  </div>
+                  <GlassButton onClick={() => fetchChatsFromInstance(selectedInstanceName)} className="!px-3 !py-2 hover:!text-orange-500">
+                    <RefreshCw size={14} className={isLoadingChats ? 'animate-spin text-orange-500' : ''} />
+                  </GlassButton>
                   <NeonButton className="!px-3 !py-2"><Plus size={14} /></NeonButton>
                 </div>
                 
                 <div className="relative">
-                  <input placeholder="Buscar contato..." className="w-full bg-white/[0.03] border border-white/5 rounded-xl py-2.5 px-10 text-[10px] uppercase font-bold outline-none focus:border-orange-500/40" />
+                  <input placeholder="Buscar contatos..." className="w-full bg-white/[0.03] border border-white/5 rounded-xl py-2.5 px-10 text-[10px] uppercase font-bold outline-none focus:border-orange-500/40" />
                   <Search size={14} className="absolute left-3 top-2.5 text-gray-600" />
                 </div>
 
@@ -187,10 +307,24 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
-                {tickets.filter(t => t.status === activeFilter).map(ticket => (
+                {isLoadingChats ? (
+                  <div className="flex flex-col items-center justify-center py-12 opacity-30 gap-4">
+                    <Loader2 className="animate-spin text-orange-500" />
+                    <span className="text-[8px] font-black uppercase tracking-widest italic">Pulsando Sincronização...</span>
+                  </div>
+                ) : tickets.length === 0 ? (
+                  <div className="text-center py-12 px-6 space-y-3 opacity-30">
+                    <AlertCircle className="mx-auto text-gray-700" size={32} />
+                    <p className="text-[9px] font-black uppercase leading-tight italic">Nenhum contato encontrado nesta instância.</p>
+                    <GlassButton onClick={() => fetchChatsFromInstance(selectedInstanceName)} className="!px-4 !py-2 !text-[8px]">Forçar Atualização</GlassButton>
+                  </div>
+                ) : tickets.filter(t => t.status === activeFilter).map(ticket => (
                   <div 
                     key={ticket.id} 
-                    onClick={() => setSelectedTicket(ticket)}
+                    onClick={() => {
+                      setSelectedTicket(ticket);
+                      fetchMessagesForTicket(ticket);
+                    }}
                     className={`p-4 rounded-2xl cursor-pointer transition-all border ${selectedTicket?.id === ticket.id ? 'bg-orange-600/10 border-orange-500/20 shadow-lg' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
                   >
                     <div className="flex gap-3">
@@ -205,7 +339,7 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                         </div>
                         <p className="text-[9px] text-gray-400 font-medium truncate mb-2">{ticket.lastMessage}</p>
                         <div className="flex items-center justify-between">
-                           <span className="text-[8px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black uppercase tracking-widest">Comunidade ZDG</span>
+                           <span className="text-[8px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black uppercase tracking-widest italic">Conectado</span>
                            {ticket.unreadCount > 0 && <span className="bg-green-500 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">{ticket.unreadCount}</span>}
                         </div>
                       </div>
@@ -224,29 +358,42 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                        <img src={selectedTicket.avatar} className="w-10 h-10 rounded-full border border-white/10" />
                        <div>
                           <h3 className="text-[12px] font-black uppercase italic tracking-tighter">{selectedTicket.contactName}</h3>
-                          <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest italic">Atribuído a: {selectedTicket.assignedTo} | Ticket: {selectedTicket.id}</p>
+                          <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest italic">Canal: {selectedInstanceName.replace(`${userPrefix}_`, '')} | {selectedTicket.id}</p>
                        </div>
                     </div>
                     <div className="flex items-center gap-4">
-                       <GlassButton className="!p-2"><RefreshCw size={14}/></GlassButton>
+                       <GlassButton onClick={() => fetchMessagesForTicket(selectedTicket)} className="!p-2 hover:!text-orange-500">
+                        {isLoadingMessages ? <Loader2 size={14} className="animate-spin text-orange-500"/> : <RefreshCw size={14}/>}
+                       </GlassButton>
                        <GlassButton className="!p-2"><Bot size={14}/></GlassButton>
-                       <GlassButton className="!p-2"><MoreVertical size={14}/></GlassButton>
-                       <NeonButton className="!px-3 !py-1.5 !text-[8px]">Resolver</NeonButton>
+                       <NeonButton className="!px-3 !py-1.5 !text-[8px]">Concluir</NeonButton>
                     </div>
                   </header>
 
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-whatsapp-pattern custom-scrollbar" style={{ backgroundImage: `url('https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/whatsapp-bg.png')`, backgroundSize: '400px', backgroundRepeat: 'repeat', opacity: 1 }}>
-                    {selectedTicket.messages.map((msg, i) => (
-                      <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[70%] p-3 rounded-2xl shadow-xl relative ${msg.sender === 'me' ? 'bg-orange-600/90 text-white rounded-tr-none' : 'bg-white/5 text-gray-200 border border-white/5 rounded-tl-none backdrop-blur-md'}`}>
-                          <p className="text-[11px] font-medium leading-relaxed">{msg.text}</p>
-                          <div className={`text-[7px] mt-1 flex items-center gap-1 ${msg.sender === 'me' ? 'text-orange-200 justify-end' : 'text-gray-500'}`}>
-                            {msg.time}
-                            {msg.sender === 'me' && <CheckCircle2 size={8} className="text-orange-200" />}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar" style={{ backgroundImage: `url('https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/whatsapp-bg.png')`, backgroundSize: '400px', backgroundRepeat: 'repeat', opacity: 1 }}>
+                    {isLoadingMessages ? (
+                      <div className="flex flex-col items-center justify-center h-full opacity-20 space-y-4">
+                        <Loader2 className="animate-spin text-orange-500" size={32} />
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Recuperando trilhas de conversa...</p>
+                      </div>
+                    ) : selectedTicket.messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full opacity-20 space-y-4">
+                        <History size={48} />
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Sem histórico recente.</p>
+                      </div>
+                    ) : (
+                      selectedTicket.messages.map((msg, i) => (
+                        <div key={msg.id || i} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[70%] p-3 rounded-2xl shadow-xl relative ${msg.sender === 'me' ? 'bg-orange-600/90 text-white rounded-tr-none' : 'bg-white/5 text-gray-200 border border-white/5 rounded-tl-none backdrop-blur-md'}`}>
+                            <p className="text-[11px] font-medium leading-relaxed">{msg.text}</p>
+                            <div className={`text-[7px] mt-1 flex items-center gap-1 ${msg.sender === 'me' ? 'text-orange-200 justify-end' : 'text-gray-500'}`}>
+                              {msg.time}
+                              {msg.sender === 'me' && <CheckCircle2 size={8} className="text-orange-200" />}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                     <div ref={chatEndRef} />
                   </div>
 
@@ -258,13 +405,14 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
                          value={messageInput}
                          onChange={e => setMessageInput(e.target.value)}
                          onKeyPress={e => e.key === 'Enter' && handleSendMessage()}
-                         placeholder="Digite aqui sua resposta neural..." 
+                         placeholder="Escreva uma resposta neural..." 
                          className="flex-1 bg-transparent border-none outline-none text-[11px] font-bold py-2" 
                        />
                        <button className="text-gray-500 hover:text-orange-500 transition-all"><Mic size={18} /></button>
                        <button 
                          onClick={handleSendMessage}
-                         className="bg-orange-600 p-2.5 rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-orange-600/20"
+                         disabled={!messageInput.trim()}
+                         className="bg-orange-600 p-2.5 rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50 disabled:grayscale"
                        >
                          <Send size={16} />
                        </button>
@@ -274,8 +422,8 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center opacity-20 p-12">
                    <MessageCircle size={80} className="mb-6 text-orange-500" />
-                   <h2 className="text-2xl font-black uppercase italic tracking-tighter">Cluster de Atendimento</h2>
-                   <p className="text-[10px] uppercase font-bold tracking-[0.3em] mt-2">Selecione uma sintonia para iniciar a comunicação.</p>
+                   <h2 className="text-2xl font-black uppercase italic tracking-tighter">Cluster de CRM</h2>
+                   <p className="text-[10px] uppercase font-bold tracking-[0.3em] mt-2">Escolha uma conversa para iniciar o processamento.</p>
                 </div>
               )}
             </div>
@@ -285,41 +433,29 @@ export function Dashboard({ user, onLogout, onCheckout }: { user: UserSession; o
               <div className="text-center space-y-4">
                 <div className="relative w-24 h-24 mx-auto">
                    <img src={selectedTicket?.avatar} className="w-full h-full rounded-3xl object-cover border-2 border-orange-500/20 shadow-2xl" />
-                   <span className="absolute -top-2 -right-2 bg-red-600 text-[7px] font-black px-2 py-0.5 rounded-full uppercase italic">Privado</span>
+                   <span className="absolute -top-2 -right-2 bg-blue-600 text-[7px] font-black px-2 py-0.5 rounded-full uppercase italic shadow-lg shadow-blue-500/20">Verified</span>
                 </div>
                 <div>
                   <h3 className="text-lg font-black uppercase italic tracking-tighter">{selectedTicket?.contactName}</h3>
-                  <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{selectedTicket?.contactPhone}</p>
+                  <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">+{selectedTicket?.contactPhone}</p>
                 </div>
-                <GlassButton className="w-full !py-2 !text-[9px]">Editar Contato</GlassButton>
+                <GlassButton className="w-full !py-2 !text-[9px]">Histórico do Lead</GlassButton>
               </div>
 
               <div className="space-y-4">
-                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><Info size={12}/> Dados do Contato</div>
+                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><Info size={12}/> Metadados Neurais</div>
                  <GlassCard className="!p-4 space-y-3 !bg-white/[0.01]">
                     <div className="flex justify-between items-center text-[9px]">
-                       <span className="text-gray-500 uppercase font-black">Status</span>
-                       <span className="text-green-500 font-black uppercase italic">Verificado</span>
+                       <span className="text-gray-500 uppercase font-black">Status Global</span>
+                       <span className="text-green-500 font-black uppercase italic">Sincronizado</span>
                     </div>
                     <div className="flex justify-between items-center text-[9px]">
-                       <span className="text-gray-500 uppercase font-black">Ticket ID</span>
-                       <span className="text-white font-black italic">#868</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[9px]">
-                       <span className="text-gray-500 uppercase font-black">Origem</span>
-                       <span className="text-white font-black italic">WayIA Flow</span>
+                       <span className="text-gray-500 uppercase font-black">Protocolo</span>
+                       <span className="text-white font-black italic">#{selectedTicket?.protocol}</span>
                     </div>
                  </GlassCard>
 
-                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><ClipboardList size={12}/> Protocolo Neural</div>
-                 <GlassCard className="!p-4 !bg-white/[0.01]">
-                    <p className="text-[9px] text-gray-400 font-bold mb-3 italic">Protocolo gerado automaticamente pelo cluster.</p>
-                    <div className="bg-black/40 p-3 rounded-xl border border-white/5 text-center">
-                       <span className="text-[12px] font-black text-orange-500 italic tracking-widest">{selectedTicket?.protocol}</span>
-                    </div>
-                 </GlassCard>
-
-                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><Star size={12}/> Avaliação</div>
+                 <div className="flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest italic"><Star size={12}/> Humor do Lead</div>
                  <GlassCard className="!p-4 !bg-white/[0.01]">
                     <div className="flex justify-center gap-2 text-gray-700">
                        {[1,2,3,4,5].map(s => <Star key={s} size={14} className={s <= 4 ? 'text-orange-500 fill-orange-500' : ''} />)}
