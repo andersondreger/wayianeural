@@ -59,6 +59,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [newInstanceName, setNewInstanceName] = useState('');
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
+  const [isSyncingChats, setIsSyncingChats] = useState(false);
   
   // Estados de Atendimento (CRM Neural)
   const [tickets, setTickets] = useState<Ticket[]>([
@@ -66,15 +67,15 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
       id: '1',
       contactName: 'Anderson Dreger',
       contactPhone: '5545999045858',
-      lastMessage: 'Aguardando processamento neural...',
+      lastMessage: 'Sistema operacional e aguardando sincronização de leads.',
       sentiment: 'happy',
       time: 'Agora',
       status: 'em_atendimento',
-      unreadCount: 1,
+      unreadCount: 0,
       assignedTo: 'Master',
-      protocol: 'PROTO-2025-X',
+      protocol: 'WAY-2025-ALPHA',
       messages: [
-        { id: 'm1', text: 'Bem-vindo ao terminal de atendimento WayFlow.', sender: 'me', time: '10:00', status: 'read', type: 'text' }
+        { id: 'm1', text: 'Terminal Neural Ativo. Aguardando sincronização de instâncias...', sender: 'me', time: '10:00', status: 'read', type: 'text' }
       ]
     }
   ]);
@@ -130,31 +131,46 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedTicket?.messages]);
 
-  // Função para sincronizar chats reais da Evolution API
-  const syncChats = async (instanceName: string) => {
+  // Sincronização Robusta de Chats (Melhorado para capturar leads reais)
+  const syncChats = async (instanceName?: string) => {
+    const target = instanceName || instances.find(i => i.status === 'CONNECTED')?.name;
+    if (!target) return;
+
+    setIsSyncingChats(true);
     try {
-      const res = await fetch(`${getBaseUrl()}/chat/fetchChats/${instanceName}`, { headers: getHeaders() });
-      if (!res.ok) return;
-      const data = await res.json();
+      const res = await fetch(`${getBaseUrl()}/chat/fetchChats/${target}`, { headers: getHeaders() });
+      if (!res.ok) throw new Error("API Offline");
+      const result = await res.json();
       
-      if (Array.isArray(data)) {
-        const newTickets: Ticket[] = data.slice(0, 20).map((chat: any) => ({
+      // Suporte para múltiplos formatos de resposta da Evolution v2
+      const chatList = Array.isArray(result) ? result : (result.data || result.instances || []);
+      
+      if (chatList.length > 0) {
+        const newTickets: Ticket[] = chatList.map((chat: any) => ({
           id: chat.id || chat.remoteJid,
-          contactName: chat.name || chat.pushName || chat.remoteJid.split('@')[0],
-          contactPhone: chat.remoteJid.split('@')[0],
-          lastMessage: chat.lastMessage?.message?.conversation || 'Conversa iniciada',
+          contactName: chat.name || chat.pushName || chat.remoteJid?.split('@')[0] || 'Lead Novo',
+          contactPhone: chat.remoteJid?.split('@')[0] || '',
+          lastMessage: chat.lastMessage?.message?.conversation || chat.lastMessage?.message?.extendedTextMessage?.text || 'Mídia ou Mensagem do Sistema',
           sentiment: 'neutral',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'novo',
           unreadCount: chat.unreadCount || 0,
           assignedTo: 'IA',
-          protocol: `WF-${Math.floor(1000 + Math.random() * 9000)}`,
+          protocol: `NF-${Math.floor(1000 + Math.random() * 9000)}`,
           messages: []
         }));
-        setTickets(prev => [...prev, ...newTickets.filter(nt => !prev.find(p => p.id === nt.id))]);
+
+        setTickets(prev => {
+          // Mantemos apenas contatos únicos por ID/RemoteJid
+          const existingIds = new Set(prev.map(p => p.id));
+          const uniqueNewOnes = newTickets.filter(nt => !existingIds.has(nt.id));
+          return [...prev, ...uniqueNewOnes];
+        });
       }
     } catch (err) {
-      console.error("Erro sync chats:", err);
+      console.error("Erro no Sync Neural:", err);
+    } finally {
+      setIsSyncingChats(false);
     }
   };
 
@@ -163,7 +179,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
 
     const connectedInst = instances.find(i => i.status === 'CONNECTED');
     if (!connectedInst) {
-      alert("Nenhuma Engine conectada para enviar mensagens.");
+      alert("ERRO: Nenhuma Engine conectada. Conecte uma instância no menu de Engines primeiro.");
       return;
     }
 
@@ -194,7 +210,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
         })
       });
     } catch (err) {
-      console.error("Erro API Send:", err);
+      console.error("Falha no disparo:", err);
     }
   };
 
@@ -228,6 +244,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
         const state = inst.status || inst.connectionStatus || inst.state || inst.instance?.state || 'disconnected';
         const isConnected = state === 'open' || state === 'CONNECTED';
         
+        // Se a instância estiver conectada, tentamos sincronizar chats automaticamente
         if (isConnected) syncChats(name);
 
         return {
@@ -260,9 +277,9 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
         const res = await fetch(`${getBaseUrl()}/instance/${endpoint}/${name}`, { headers: getHeaders() });
         
         if (res.status === 404) {
-          addDebug(`Engine em Booting...`);
+          addDebug(`Aguardando Engine...`);
           if (attempts % 4 === 0) await fetch(`${getBaseUrl()}/instance/connect/${name}`, { headers: getHeaders() });
-          pollTimerRef.current = setTimeout(performPoll, 1500); // Polling ultra rápido para UX
+          pollTimerRef.current = setTimeout(performPoll, 1500); 
           return;
         }
 
@@ -285,7 +302,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
           setQrCodeModal(prev => ({ ...prev, code: formattedQr, status: 'Escaneie o QR', isBooting: false }));
           pollTimerRef.current = setTimeout(performPoll, 5000);
         } else {
-          addDebug("Aguardando buffer visual...");
+          addDebug("Processando buffer visual...");
           pollTimerRef.current = setTimeout(performPoll, 1500);
         }
       } catch (err) {
@@ -305,7 +322,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
     try {
       addDebug("Limpando cache...");
       await fetch(`${getBaseUrl()}/instance/logout/${name}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
-      addDebug("Sinalizando Handshake...");
+      addDebug("Sinalizando Cluster...");
       const res = await fetch(`${getBaseUrl()}/instance/connect/${name}`, { headers: getHeaders() });
       const data = await res.json();
       const instantQr = processQrData(data);
@@ -315,7 +332,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
       }
       startQrPolling(name);
     } catch (err) {
-      addDebug("Falha no cluster.");
+      addDebug("Erro de Conexão.");
       startQrPolling(name);
     }
   };
@@ -373,7 +390,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
     <div className="flex h-screen bg-[#050505] overflow-hidden text-white">
       <div className="fixed inset-0 grid-engine pointer-events-none opacity-5"></div>
 
-      {/* Sidebar Principal */}
+      {/* Sidebar Neural */}
       <aside className="w-[280px] border-r border-white/5 flex flex-col p-6 bg-black/40 backdrop-blur-3xl z-50">
         <Logo size="sm" className="mb-10 px-2" />
         <nav className="flex-1 space-y-2">
@@ -394,10 +411,10 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
         </div>
       </aside>
 
-      {/* Área de Conteúdo Dinâmico */}
+      {/* Conteúdo Principal */}
       <main className="flex-1 flex flex-col relative overflow-hidden bg-[#070707]">
         
-        {/* Modal QR Code Turbo */}
+        {/* Modal QR Code */}
         <AnimatePresence>
           {qrCodeModal.isOpen && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/98 backdrop-blur-3xl">
@@ -436,59 +453,73 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
         </AnimatePresence>
 
         {activeTab === 'atendimento' && (
-          <div className="flex h-full min-h-0">
-            {/* Lista de Contatos / CRM Lateral */}
-            <div className="w-[400px] border-r border-white/5 flex flex-col bg-black/20 backdrop-blur-md">
-              <div className="p-8 space-y-6">
-                <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">Inbox <span className="text-orange-500">Neural.</span></h2>
+          <div className="flex h-full min-h-0 relative">
+            {/* Inbox Sidebar */}
+            <div className="w-[400px] border-r border-white/5 flex flex-col bg-black/20 backdrop-blur-md h-full">
+              <div className="p-8 space-y-6 shrink-0">
+                <div className="flex items-center justify-between">
+                   <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">Inbox <span className="text-orange-500">Neural.</span></h2>
+                   <button 
+                     onClick={() => syncChats()} 
+                     disabled={isSyncingChats}
+                     className={`p-3 rounded-xl glass hover:text-orange-500 transition-all ${isSyncingChats ? 'animate-spin text-orange-500 scale-110' : 'text-gray-600'}`}
+                   >
+                     <RefreshCw size={18} />
+                   </button>
+                </div>
                 <div className="relative">
                   <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-700" size={16} />
                   <input 
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="FILTRAR LEADS" 
+                    placeholder="BUSCAR LEAD..." 
                     className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-5 pl-14 pr-6 text-[10px] font-bold uppercase outline-none focus:border-orange-500/40 transition-all placeholder:text-gray-800"
                   />
                 </div>
               </div>
 
-              {/* Loop de Contatos */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-4 space-y-2 pb-8">
-                {filteredTickets.length > 0 ? filteredTickets.map(ticket => (
-                  <button 
-                    key={ticket.id}
-                    onClick={() => setSelectedTicketId(ticket.id)}
-                    className={`w-full p-6 rounded-[2rem] flex items-center gap-5 transition-all relative group ${selectedTicketId === ticket.id ? 'bg-orange-500/10 border border-orange-500/20 shadow-[0_0_30px_rgba(255,115,0,0.05)]' : 'hover:bg-white/[0.02] border border-transparent'}`}
-                  >
-                    <div className="relative shrink-0">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gray-900 to-black border border-white/5 flex items-center justify-center overflow-hidden">
-                        <Users size={24} className="text-gray-700" />
+              {/* Lista de Leads com Scroll Garantido */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-4 space-y-2 pb-8 min-h-0">
+                {filteredTickets.length > 0 ? (
+                  filteredTickets.map(ticket => (
+                    <button 
+                      key={ticket.id}
+                      onClick={() => setSelectedTicketId(ticket.id)}
+                      className={`w-full p-6 rounded-[2rem] flex items-center gap-5 transition-all border ${selectedTicketId === ticket.id ? 'bg-orange-500/10 border-orange-500/20 shadow-[0_0_40px_rgba(255,115,0,0.05)]' : 'hover:bg-white/[0.02] border-transparent'}`}
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gray-900 to-black border border-white/5 flex items-center justify-center overflow-hidden">
+                          <Users size={24} className="text-gray-700" />
+                        </div>
+                        <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-black flex items-center justify-center ${
+                          ticket.sentiment === 'happy' ? 'bg-green-500' : 'bg-gray-500'
+                        }`}>
+                           <Circle size={4} className="fill-white" />
+                        </div>
                       </div>
-                      <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-black flex items-center justify-center ${
-                        ticket.sentiment === 'happy' ? 'bg-green-500' : ticket.sentiment === 'angry' ? 'bg-red-500' : 'bg-gray-500'
-                      }`}>
-                         {ticket.sentiment === 'happy' ? <SmilePlus size={12} /> : <Circle size={4} className="fill-white" />}
+                      <div className="flex-1 text-left min-w-0">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[12px] font-black uppercase tracking-tighter truncate">{ticket.contactName}</span>
+                          <span className="text-[9px] font-bold text-gray-700 uppercase">{ticket.time}</span>
+                        </div>
+                        <p className="text-[10px] text-gray-600 font-bold uppercase tracking-tight truncate">{ticket.lastMessage}</p>
                       </div>
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[12px] font-black uppercase tracking-tighter truncate">{ticket.contactName}</span>
-                        <span className="text-[9px] font-bold text-gray-700 uppercase">{ticket.time}</span>
-                      </div>
-                      <p className="text-[10px] text-gray-600 font-bold uppercase tracking-tight truncate">{ticket.lastMessage}</p>
-                    </div>
-                  </button>
-                )) : (
-                  <div className="p-10 text-center opacity-20 text-[10px] font-black uppercase tracking-widest italic">Nenhum lead encontrado</div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 opacity-30 text-center">
+                     <Unplug size={40} className="mb-4 text-orange-500" />
+                     <p className="text-[10px] font-black uppercase tracking-[0.2em] italic max-w-[200px] leading-relaxed">Nenhum lead detectado no cluster. Verifique a conexão das Engines.</p>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Terminal de Chat Central */}
+            {/* Terminal de Chat */}
             <div className="flex-1 flex flex-col relative bg-[#080808]">
               {selectedTicket ? (
                 <>
-                  <header className="p-8 border-b border-white/5 flex items-center justify-between bg-black/40 backdrop-blur-md">
+                  <header className="p-8 border-b border-white/5 flex items-center justify-between bg-black/40 backdrop-blur-md shrink-0">
                     <div className="flex items-center gap-6">
                       <div className="w-12 h-12 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
                         <User size={20} className="text-orange-500" />
@@ -502,13 +533,12 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <GlassButton className="!px-5 !py-3 !rounded-xl !text-[8px] border-green-500/20 text-green-500 hover:!bg-green-500/10">Finalizar Ciclo</GlassButton>
+                    <div className="flex gap-4">
+                      <GlassButton className="!px-5 !py-3 !rounded-xl !text-[8px] text-green-500 border-green-500/10">Finalizar</GlassButton>
                       <button className="p-4 glass rounded-xl text-gray-600 hover:text-white transition-colors"><MoreVertical size={18} /></button>
                     </div>
                   </header>
 
-                  {/* Fluxo de Mensagens */}
                   <div className="flex-1 overflow-y-auto custom-scrollbar p-10 space-y-6">
                     {selectedTicket.messages.map((msg, i) => (
                       <motion.div 
@@ -516,7 +546,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                         key={msg.id} 
                         className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}
                       >
-                        <div className={`max-w-[70%] ${msg.sender === 'me' ? 'bg-orange-600 text-white rounded-[2rem] rounded-tr-none' : 'bg-[#151515] border border-white/5 text-gray-300 rounded-[2rem] rounded-tl-none'} p-6 shadow-2xl`}>
+                        <div className={`max-w-[70%] p-6 rounded-[2rem] shadow-2xl ${msg.sender === 'me' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-[#151515] border border-white/5 text-gray-300 rounded-tl-none'}`}>
                             <p className="text-[13px] font-bold leading-relaxed">{msg.text}</p>
                             <div className="flex items-center gap-2 mt-3 opacity-30 text-[8px] font-black uppercase">
                               {msg.time} {msg.sender === 'me' && <CheckCheck size={12} />}
@@ -527,25 +557,20 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                     <div ref={chatEndRef} />
                   </div>
 
-                  {/* Input de Comando */}
-                  <footer className="p-8 bg-black/60 backdrop-blur-3xl border-t border-white/5">
+                  <footer className="p-8 bg-black/60 backdrop-blur-3xl border-t border-white/5 shrink-0">
                     <div className="max-w-4xl mx-auto flex items-end gap-4">
-                      <div className="flex-1 glass border-white/10 rounded-[2.5rem] p-3 flex items-end gap-3 shadow-2xl">
+                      <div className="flex-1 glass border-white/10 rounded-[2.5rem] p-3 flex items-end gap-3">
                         <button className="p-4 text-gray-600 hover:text-orange-500 transition-colors"><Paperclip size={20} /></button>
                         <textarea 
                           value={messageInput}
                           onChange={e => setMessageInput(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-                          placeholder="DIGITE SEU COMANDO NEURAL..." 
+                          placeholder="DIGITE SUA RESPOSTA..." 
                           className="flex-1 bg-transparent border-none outline-none py-4 px-2 text-sm font-bold uppercase tracking-tight resize-none max-h-32 min-h-[50px] custom-scrollbar"
                         />
                         <button className="p-4 text-gray-600 hover:text-orange-500 transition-colors"><Smile size={20} /></button>
                       </div>
-                      <NeonButton 
-                        onClick={handleSendMessage}
-                        disabled={!messageInput.trim()}
-                        className="!w-16 !h-16 !rounded-full !p-0 flex items-center justify-center shrink-0"
-                      >
+                      <NeonButton onClick={handleSendMessage} disabled={!messageInput.trim()} className="!w-16 !h-16 !rounded-full !p-0">
                         <Send size={24} className="ml-1" />
                       </NeonButton>
                     </div>
@@ -553,15 +578,10 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-20 space-y-8">
-                  <div className="relative">
-                    <MessageSquare size={120} className="text-gray-900 animate-pulse" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Activity className="text-orange-500" size={40} />
-                    </div>
-                  </div>
+                  <Activity className="text-orange-500 animate-pulse" size={64} />
                   <div className="space-y-4">
-                    <h3 className="text-4xl font-black uppercase italic tracking-tighter">Aguardando <span className="text-orange-500">Transmissão.</span></h3>
-                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 max-w-xs leading-loose italic">A Engine está monitorando o cluster. Selecione um lead para processamento.</p>
+                    <h3 className="text-4xl font-black uppercase italic tracking-tighter">Terminal <span className="text-orange-500">Ocioso.</span></h3>
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 max-w-xs leading-loose italic">Aguardando seleção de lead para processamento tático.</p>
                   </div>
                 </div>
               )}
@@ -569,13 +589,12 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
           </div>
         )}
 
-        {/* Tab: Overview (Painel de Status) */}
         {activeTab === 'overview' && (
           <div className="flex-1 p-12 lg:p-20 overflow-y-auto custom-scrollbar">
             <header className="mb-16">
-              <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter leading-none relative z-10">Status <span className="text-orange-500">Neural.</span></h2>
+              <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter leading-none">Status <span className="text-orange-500">Neural.</span></h2>
             </header>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <GlassCard className="!p-10 border-orange-500/10">
                 <Smartphone className="text-orange-500 mb-6" size={36} />
                 <div className="text-6xl font-black italic tracking-tighter">{instances.length}</div>
@@ -587,17 +606,16 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                     Cluster {apiStatus === 'online' ? 'Conectado' : 'Offline'}
                  </div>
                  <Globe className="text-blue-500 mb-4" size={32} />
-                 <div className="text-[12px] font-black uppercase tracking-widest italic text-gray-400 leading-none">evo2.wayiaflow.com.br</div>
+                 <div className="text-[12px] font-black uppercase tracking-widest italic text-gray-400">evo2.wayiaflow.com.br</div>
               </GlassCard>
-              <GlassCard className="!p-10 flex flex-col justify-center items-center border-orange-500/20 bg-orange-500/[0.03]">
+              <GlassCard className="!p-10 flex flex-col justify-center items-center border-orange-500/20">
                 <Activity className="text-orange-500 animate-pulse mb-6" size={48} />
-                <div className="text-[10px] font-black uppercase tracking-[0.5em] text-orange-500 animate-bounce">Neural Bridge v4.0</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.5em] text-orange-500">Neural Core v4.1</div>
               </GlassCard>
             </div>
           </div>
         )}
 
-        {/* Tab: Engines (Gerenciamento) */}
         {activeTab === 'integracoes' && (
           <div className="flex-1 p-12 lg:p-20 overflow-y-auto custom-scrollbar">
              <header className="mb-16">
@@ -609,14 +627,14 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                       <div className="p-5 bg-orange-500/10 rounded-3xl text-orange-500"><Plus size={28} /></div>
                       <div>
                          <h3 className="text-3xl font-black uppercase italic tracking-tight mb-1">Nova Engine</h3>
-                         <p className="text-[11px] text-gray-600 font-bold uppercase tracking-widest">Ativação instantânea via Baileys</p>
+                         <p className="text-[11px] text-gray-600 font-bold uppercase tracking-widest">Injeção via Baileys Framework</p>
                       </div>
                    </div>
                    <div className="flex gap-4 mb-12">
                       <input 
                         value={newInstanceName} 
                         onChange={e => setNewInstanceName(e.target.value)} 
-                        placeholder="NOME DA INSTÂNCIA" 
+                        placeholder="NOME DA ENGINE" 
                         className="flex-1 bg-black/40 border border-white/5 rounded-2xl py-6 px-8 text-[14px] font-black uppercase outline-none focus:border-orange-500 transition-all font-mono placeholder:text-gray-800" 
                       />
                       <NeonButton onClick={handleProvisionInstance} disabled={!newInstanceName || isCreatingInstance} className="!px-12 !rounded-2xl">
@@ -627,7 +645,7 @@ export function Dashboard({ user, onLogout }: { user: UserSession; onLogout: () 
                       {instances.map(inst => (
                           <div key={inst?.id} className="group flex items-center justify-between p-8 bg-white/[0.02] border border-white/5 rounded-[3rem] hover:border-orange-500/40 transition-all">
                              <div className="flex items-center gap-6">
-                                <div className={`w-4 h-4 rounded-full ${inst?.status === 'CONNECTED' ? 'bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]'}`} />
+                                <div className={`w-4 h-4 rounded-full ${inst?.status === 'CONNECTED' ? 'bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-red-500'}`} />
                                 <div>
                                    <div className="text-xl font-black uppercase italic leading-none mb-1">{inst?.name}</div>
                                    <div className="text-[11px] text-gray-700 font-bold font-mono italic">{inst?.status === 'CONNECTED' ? inst?.phone : 'Sync Pendente'}</div>
