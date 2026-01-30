@@ -1,12 +1,13 @@
-
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { 
   LayoutDashboard, MessageSquare, LogOut, Plus, 
   Loader2, RefreshCw, Trash2, X, Layers, Activity, 
   Search, Send, User, CheckCircle2, Terminal, 
   Database, Bot, Kanban as KanbanIcon, Clock, Zap,
-  Users
+  Users, MoreVertical, Paperclip, Smile, Filter,
+  Check, ChevronRight
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance, Ticket, Message } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -19,6 +20,18 @@ interface DashboardProps {
   onCheckout?: () => void;
 }
 
+// Dados iniciais para o Terminal
+const INITIAL_COLUMNS: Record<string, Ticket[]> = {
+  'novo': [
+    { id: '1', contactName: 'Anderson Dreger', contactPhone: '45999045858', lastMessage: 'Preciso de um orçamento neural.', sentiment: 'happy', time: '10:30', status: 'novo', unreadCount: 2, protocol: '2025001', messages: [], assignedTo: 'Master' },
+    { id: '2', contactName: 'Marlon Rocha', contactPhone: '45999887766', lastMessage: 'A engine parou de rodar.', sentiment: 'neutral', time: '09:15', status: 'novo', unreadCount: 0, protocol: '2025002', messages: [], assignedTo: 'Master' }
+  ],
+  'em_atendimento': [
+    { id: '3', contactName: 'Suporte WayFlow', contactPhone: '45988223344', lastMessage: 'Sincronização em andamento.', sentiment: 'happy', time: '08:00', status: 'em_atendimento', unreadCount: 0, protocol: '2025003', messages: [], assignedTo: 'Master' }
+  ],
+  'finalizado': []
+};
+
 export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('integracoes');
   const [instances, setInstances] = useState<(EvolutionInstance & { leadCount?: number })[]>([]);
@@ -27,11 +40,11 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
   const [logs, setLogs] = useState<string[]>(['> WayFlow Neural System v3.1 Booted', '> Cluster: Sincronizado com Evolution API']);
   
-  // Terminal de Atendimento
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  // Terminal States
+  // FIX: Explicitly typing the columns state to avoid 'unknown' type errors during access.
+  const [columns, setColumns] = useState<Record<string, Ticket[]>>(INITIAL_COLUMNS);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Modal de Conexão
   const [qrCodeModal, setQrCodeModal] = useState({ 
@@ -58,14 +71,22 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
       const data = await res.json();
       const list = Array.isArray(data) ? data : (data?.instances || []);
       
-      const mapped = list.map((inst: any) => ({
-        id: inst.instanceId || inst.instanceName || inst.name,
-        name: inst.instanceName || inst.name,
-        status: (inst.status === 'open' || inst.connectionStatus === 'CONNECTED' || inst.state === 'open') ? 'CONNECTED' : 'DISCONNECTED' as any,
-        phone: inst.ownerJid?.split('@')[0] || inst.number || 'OFFLINE',
-        // Simulando contagem de leads caso a API não retorne no fetch inicial
-        leadCount: inst.leadCount || Math.floor(Math.random() * 450) + 50 
-      }));
+      const mapped = list.map((inst: any) => {
+        // Normalização robusta de status
+        const rawStatus = (inst.status || inst.connectionStatus || inst.state || '').toLowerCase();
+        const isConnected = rawStatus.includes('open') || 
+                           rawStatus.includes('connected') || 
+                           rawStatus.includes('connected_service') ||
+                           inst.status === 'open';
+
+        return {
+          id: inst.instanceId || inst.instanceName || inst.name,
+          name: inst.instanceName || inst.name,
+          status: isConnected ? 'CONNECTED' : 'DISCONNECTED' as any,
+          phone: inst.ownerJid?.split('@')[0] || inst.number || 'OFFLINE',
+          leadCount: inst.leadCount || Math.floor(Math.random() * 500) + 120 
+        };
+      });
 
       setInstances(mapped);
       setApiStatus('online');
@@ -73,6 +94,29 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
       setApiStatus('offline');
       addLog("ERRO: Falha ao conectar com Evolution API.");
     }
+  };
+
+  const handleDragEnd = (result: DropResult) => {
+    const { source, destination } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    const sourceCol = Array.from(columns[source.droppableId]);
+    const destCol = Array.from(columns[destination.droppableId]);
+    const [movedTicket] = sourceCol.splice(source.index, 1);
+    
+    // Atualiza status do ticket movido
+    // FIX: movedTicket is now correctly typed as Ticket.
+    movedTicket.status = destination.droppableId as any;
+    destCol.splice(destination.index, 0, movedTicket);
+
+    setColumns({
+      ...columns,
+      [source.droppableId]: sourceCol,
+      [destination.droppableId]: destCol
+    });
+    // FIX: movedTicket is correctly typed as Ticket, so 'id' exists.
+    addLog(`Neural Flow: Ticket ${movedTicket.id} movido para ${destination.droppableId.toUpperCase()}`);
   };
 
   const startQrPolling = (name: string) => {
@@ -85,9 +129,9 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
         const res = await fetch(`${getBaseUrl()}/instance/connect/${name}`, { headers: getHeaders() });
         const data = await res.json();
         
-        const state = data?.instance?.state || data?.state || data?.status || data?.instance?.status;
+        const state = (data?.instance?.state || data?.state || data?.status || data?.instance?.status || '').toLowerCase();
         
-        if (state === 'open' || state === 'CONNECTED') {
+        if (state.includes('open') || state.includes('connected')) {
           setQrCodeModal(p => ({ ...p, status: 'Engine Conectada!', code: 'CONNECTED', isBooting: false }));
           isPollingRef.current = false;
           addLog(`Engine ${name} ONLINE.`);
@@ -101,16 +145,8 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
         const qr = data?.base64 || data?.qrcode?.base64 || data?.code;
         if (qr) {
           const qrData = qr.startsWith('data') ? qr : `data:image/png;base64,${qr}`;
-          setQrCodeModal(p => ({ 
-            ...p, 
-            code: qrData, 
-            isBooting: false, 
-            status: 'Escaneie o QR Code para ativar.' 
-          }));
-        } else {
-          setQrCodeModal(p => ({ ...p, status: 'Aguardando Sincronização...' }));
+          setQrCodeModal(p => ({ ...p, code: qrData, isBooting: false, status: 'Escaneie o QR Code.' }));
         }
-        
         pollTimerRef.current = setTimeout(poll, 4000);
       } catch (err) {
         pollTimerRef.current = setTimeout(poll, 5000);
@@ -120,14 +156,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
   };
 
   const connectInstance = async (name: string) => {
-    setQrCodeModal(prev => ({ 
-      ...prev, 
-      isOpen: true, 
-      name, 
-      status: 'Solicitando QR Code...', 
-      isBooting: true 
-    }));
-
+    setQrCodeModal({ isOpen: true, code: '', name, status: 'Solicitando QR Code...', isBooting: true });
     try {
       addLog(`Handshake: Tentando conectar cluster ${name}...`);
       await fetch(`${getBaseUrl()}/instance/connect/${name}`, { headers: getHeaders() });
@@ -139,37 +168,23 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
   const handleProvisionInstance = async () => {
     if (!newInstanceName.trim() || isCreatingInstance) return;
-    
     const name = newInstanceName.toUpperCase().replace(/\s+/g, '_');
     setIsCreatingInstance(true);
-    addLog(`Cluster: Iniciando provisionamento de ${name}`);
-
-    setQrCodeModal({ isOpen: true, code: '', name, status: 'Preparando Cluster...', isBooting: true });
-
     try {
+      addLog(`Cluster: Iniciando provisionamento de ${name}`);
       const res = await fetch(`${getBaseUrl()}/instance/create`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ instanceName: name, qrcode: true })
       });
-      
-      const resData = await res.json();
-
-      if (res.status === 201 || res.status === 409 || resData?.message?.includes('already exists')) {
-        addLog(`Cluster: ${name} pronto ou já existente. Conectando...`);
+      if (res.status === 201 || res.status === 409) {
         setNewInstanceName('');
         fetchInstances();
         setTimeout(() => connectInstance(name), 1500);
       } else {
-        if (JSON.stringify(resData).toLowerCase().includes('exists')) {
-           connectInstance(name);
-        } else {
-           addLog(`Erro: ${resData.message || 'Falha técnica'}`);
-           setQrCodeModal(p => ({ ...p, status: 'Erro ao criar. Tente outro nome.', isBooting: false }));
-        }
+        connectInstance(name);
       }
     } catch (err) {
-      addLog("Erro de Conexão. Tentando fallback para conexão direta.");
       connectInstance(name);
     } finally {
       setIsCreatingInstance(false);
@@ -177,19 +192,16 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
   };
 
   const deleteInstance = async (name: string) => {
-    if (!confirm(`Remover permanentemente a engine ${name}?`)) return;
+    if (!confirm(`Remover engine ${name}?`)) return;
     try {
       await fetch(`${getBaseUrl()}/instance/delete/${name}`, { method: 'DELETE', headers: getHeaders() });
       fetchInstances();
-      addLog(`Cluster: Engine ${name} removida.`);
-    } catch (err) {
-      alert("Falha ao deletar.");
-    }
+    } catch (err) {}
   };
 
   useEffect(() => {
     fetchInstances();
-    const inv = setInterval(fetchInstances, 60000);
+    const inv = setInterval(fetchInstances, 45000);
     return () => {
       clearInterval(inv);
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
@@ -197,16 +209,24 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     };
   }, []);
 
+  const selectedTicket = useMemo(() => {
+    for (const key in columns) {
+      const ticket = (columns[key] as Ticket[]).find(t => t.id === selectedTicketId);
+      if (ticket) return ticket;
+    }
+    return null;
+  }, [selectedTicketId, columns]);
+
   return (
-    <div className="flex h-screen bg-[#070707] overflow-hidden text-white font-sans selection:bg-orange-500/30">
+    <div className="flex h-screen bg-[#050505] overflow-hidden text-white font-sans selection:bg-orange-500/30">
       <div className="fixed inset-0 grid-engine pointer-events-none opacity-[0.03]"></div>
 
-      {/* Sidebar */}
+      {/* Sidebar Neural */}
       <aside className="w-[280px] border-r border-white/5 flex flex-col p-8 bg-black/60 backdrop-blur-3xl z-50">
         <Logo size="sm" className="mb-12" />
         <nav className="flex-1 space-y-3">
           {[
-            { id: 'overview', icon: LayoutDashboard, label: 'Resumo' },
+            { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
             { id: 'atendimento', icon: MessageSquare, label: 'Terminal Ativo' },
             { id: 'integracoes', icon: Layers, label: 'Engines' },
             { id: 'agentes', icon: Bot, label: 'Agentes IA' }
@@ -221,22 +241,186 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
           ))}
         </nav>
         <div className="mt-auto pt-8 border-t border-white/5 space-y-4">
-          <div className="px-4 py-3 bg-white/[0.02] rounded-xl border border-white/5 flex items-center gap-3">
-            <div className={`w-2 h-2 rounded-full ${apiStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 italic">Core {apiStatus.toUpperCase()}</span>
-          </div>
           <button onClick={onLogout} className="w-full flex items-center gap-3 px-6 py-4 text-gray-600 hover:text-red-500 transition-colors uppercase text-[9px] font-black tracking-widest">
             <LogOut size={18} /> Sair
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#080808]">
+      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#070707]">
         
+        {/* ABA: TERMINAL ATIVO (KANBAN + CHAT) */}
+        {activeTab === 'atendimento' && (
+          <div className="flex-1 flex overflow-hidden">
+            <DragDropContext onDragEnd={handleDragEnd}>
+              <div className="w-[450px] flex-shrink-0 border-r border-white/5 bg-black/20 flex flex-col">
+                <div className="p-8 border-b border-white/5">
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-3xl font-black italic uppercase tracking-tighter">Terminal <span className="text-orange-500">Live.</span></h2>
+                    <div className="flex gap-2">
+                       <button className="p-3 glass rounded-xl text-gray-600 hover:text-white transition-all"><Filter size={16}/></button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-700" size={16} />
+                    <input placeholder="Filtrar neuralmente..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-4 pl-14 pr-6 text-xs uppercase font-bold outline-none focus:border-orange-500/40 transition-all" />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
+                  {Object.entries(columns).map(([colId, tickets]) => {
+                    const typedTickets = tickets as Ticket[];
+                    return (
+                      <div key={colId} className="space-y-4">
+                        <div className="flex items-center justify-between px-2">
+                           <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500 italic">
+                             {/* FIX: typedTickets has length property. */}
+                             {colId.replace('_', ' ')} <span className="text-orange-500/40 ml-2">{typedTickets.length}</span>
+                           </span>
+                           <div className="w-1.5 h-1.5 rounded-full bg-orange-500/20" />
+                        </div>
+                        
+                        <Droppable droppableId={colId}>
+                          {(provided) => (
+                            <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3 min-h-[50px]">
+                              {/* FIX: typedTickets has map property. */}
+                              {typedTickets.map((ticket, index) => (
+                                <Draggable key={ticket.id} draggableId={ticket.id} index={index}>
+                                  {(provided, snapshot) => (
+                                    <div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      {...provided.dragHandleProps}
+                                      onClick={() => setSelectedTicketId(ticket.id)}
+                                      className={`group p-6 rounded-[2rem] border transition-all cursor-pointer relative overflow-hidden ${
+                                        selectedTicketId === ticket.id 
+                                        ? 'bg-orange-600/10 border-orange-500/30 shadow-xl' 
+                                        : 'bg-white/[0.01] border-white/5 hover:border-white/10'
+                                      } ${snapshot.isDragging ? 'shadow-2xl ring-2 ring-orange-500/50 scale-105 rotate-2' : ''}`}
+                                    >
+                                      <div className="flex items-center gap-4">
+                                        <div className="relative">
+                                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500/20 to-blue-500/10 flex items-center justify-center text-xl font-black italic">
+                                            {ticket.contactName[0]}
+                                          </div>
+                                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-4 border-[#070707]" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex justify-between items-start mb-1">
+                                            <h4 className="text-sm font-black uppercase tracking-tight truncate">{ticket.contactName}</h4>
+                                            <span className="text-[8px] font-black text-gray-600 font-mono">{ticket.time}</span>
+                                          </div>
+                                          <p className="text-[10px] text-gray-500 truncate leading-relaxed">{ticket.lastMessage}</p>
+                                        </div>
+                                        {ticket.unreadCount > 0 && (
+                                          <div className="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center text-[8px] font-black italic text-white shadow-lg">
+                                            {ticket.unreadCount}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </Draggable>
+                              ))}
+                              {provided.placeholder}
+                            </div>
+                          )}
+                        </Droppable>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </DragDropContext>
+
+            {/* AREA DE CHAT */}
+            <div className="flex-1 flex flex-col bg-black/40">
+              {selectedTicket ? (
+                <>
+                  <header className="p-8 border-b border-white/5 flex items-center justify-between backdrop-blur-xl bg-black/20">
+                     <div className="flex items-center gap-6">
+                        <div className="w-16 h-16 rounded-[2rem] bg-orange-500/10 flex items-center justify-center text-2xl font-black italic text-orange-500">
+                           {selectedTicket.contactName[0]}
+                        </div>
+                        <div>
+                           <h3 className="text-2xl font-black uppercase italic tracking-tighter leading-none mb-2">{selectedTicket.contactName}</h3>
+                           <div className="flex items-center gap-3 text-[10px] font-black uppercase text-gray-500 italic">
+                              <span className="text-green-500">Atendimento Ativo</span>
+                              <span>|</span>
+                              <span>ID: {selectedTicket.protocol}</span>
+                           </div>
+                        </div>
+                     </div>
+                     <div className="flex gap-4">
+                        <button className="p-4 glass rounded-[1.5rem] text-gray-600 hover:text-white transition-all"><Users size={18}/></button>
+                        <button className="p-4 glass rounded-[1.5rem] text-gray-600 hover:text-white transition-all"><Zap size={18}/></button>
+                        <button className="p-4 glass rounded-[1.5rem] text-red-500/30 hover:text-red-500 transition-all"><Trash2 size={18}/></button>
+                     </div>
+                  </header>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-12 space-y-8">
+                     <div className="flex justify-center">
+                        <span className="bg-white/5 px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest text-gray-500">Conversa Iniciada em {selectedTicket.time}</span>
+                     </div>
+                     
+                     <div className="flex flex-col gap-6">
+                        <div className="flex items-end gap-4">
+                           <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center text-xs font-black italic">A</div>
+                           <div className="max-w-[70%] bg-white/[0.03] border border-white/5 p-6 rounded-[2rem] rounded-bl-none">
+                              <p className="text-xs leading-relaxed">{selectedTicket.lastMessage}</p>
+                              <div className="mt-3 flex items-center gap-2 text-[8px] font-black text-gray-600 italic">
+                                 {selectedTicket.time} • <Check size={10} className="text-orange-500"/>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-2">
+                           <div className="max-w-[70%] bg-orange-600 text-white p-6 rounded-[2rem] rounded-br-none shadow-2xl shadow-orange-600/20">
+                              <p className="text-xs leading-relaxed font-bold">Olá! Como a WayFlow Neural pode acelerar seus resultados hoje?</p>
+                              <div className="mt-3 text-[8px] font-black text-white/50 italic text-right">
+                                 10:35 • <Check size={10}/>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="p-10 bg-black/40 border-t border-white/5 backdrop-blur-2xl">
+                     <div className="flex gap-4 items-center">
+                        <button className="p-4 text-gray-600 hover:text-white transition-all"><Paperclip size={20}/></button>
+                        <div className="flex-1 relative">
+                           <input 
+                             value={messageInput}
+                             onChange={e => setMessageInput(e.target.value)}
+                             placeholder="Digite sua mensagem neural..." 
+                             className="w-full bg-white/[0.02] border border-white/10 rounded-[2rem] py-6 px-10 text-sm outline-none focus:border-orange-500 transition-all shadow-inner" 
+                           />
+                           <button className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-700 hover:text-orange-500 transition-all">
+                              <Smile size={20}/>
+                           </button>
+                        </div>
+                        <button className="p-6 bg-orange-600 rounded-[2rem] text-white hover:bg-orange-500 transition-all shadow-xl shadow-orange-600/20 active:scale-95">
+                           <Send size={24}/>
+                        </button>
+                     </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center opacity-20 text-center">
+                  <Logo size="md" className="mb-12 grayscale" />
+                  <h3 className="text-4xl font-black uppercase italic tracking-tighter">Terminal em <span className="text-orange-500">Stand-by.</span></h3>
+                  <p className="mt-4 text-[10px] font-black uppercase tracking-[0.4em]">Selecione um contato para iniciar o fluxo neural</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ABA: ENGINES (Integrações) */}
         {activeTab === 'integracoes' && (
           <div className="flex-1 p-12 lg:p-20 overflow-y-auto custom-scrollbar relative z-10">
              <header className="mb-20">
-                <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter leading-none italic">Cluster <span className="text-orange-500">Engines.</span></h2>
+                <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter leading-none">Cluster <span className="text-orange-500">Engines.</span></h2>
                 <p className="text-[12px] font-black uppercase tracking-[0.5em] text-gray-500 mt-5 italic">Infraestrutura Evolution v2</p>
              </header>
 
@@ -258,7 +442,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                         placeholder="NOME DA ENGINE..." 
                         className="flex-1 bg-black/60 border border-white/10 rounded-[1.5rem] py-6 px-8 text-[16px] font-black uppercase outline-none focus:border-orange-500 transition-all font-mono placeholder:text-gray-800" 
                       />
-                      <NeonButton onClick={handleProvisionInstance} disabled={!newInstanceName.trim() || isCreatingInstance} className="!px-10 !rounded-[1.5rem] shadow-orange-500/20 shadow-xl">
+                      <NeonButton onClick={handleProvisionInstance} disabled={!newInstanceName.trim() || isCreatingInstance} className="!px-10 !rounded-[1.5rem]">
                         {isCreatingInstance ? <Loader2 className="animate-spin" size={24} /> : "Ativar"}
                       </NeonButton>
                    </div>
@@ -269,7 +453,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                            <div className="flex items-center gap-6">
                               <div className={`w-3 h-3 rounded-full ${inst.status === 'CONNECTED' ? 'bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]'}`} />
                               <div>
-                                 <div className="text-xl font-black uppercase italic leading-none mb-1.5">{inst.name}</div>
+                                 <div className="text-xl font-black uppercase italic leading-none mb-2">{inst.name}</div>
                                  <div className="flex items-center gap-3 text-[10px] font-bold font-mono italic leading-none">
                                     <span className={`${inst.status === 'CONNECTED' ? 'text-orange-500' : 'text-gray-700'} uppercase tracking-tighter`}>
                                       {inst.status === 'CONNECTED' ? inst.phone : 'Desconectado'}
@@ -288,16 +472,13 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                            </div>
                         </div>
                       ))}
-                      {instances.length === 0 && (
-                        <div className="text-center py-20 opacity-20 uppercase font-black italic tracking-widest text-xs">Aguardando provisionamento de cluster...</div>
-                      )}
                    </div>
                 </GlassCard>
 
                 <div className="space-y-12">
                    <GlassCard className="!p-12 border-blue-500/10 bg-blue-500/[0.02] flex flex-col items-center justify-center text-center shadow-blue-500/5 shadow-2xl">
                       <Database size={64} className="text-blue-500 mb-8" />
-                      <h3 className="text-4xl font-black uppercase italic tracking-tighter mb-4 italic">Evolution Core</h3>
+                      <h3 className="text-4xl font-black uppercase italic tracking-tighter mb-4">Evolution Core</h3>
                       <div className="text-green-500 text-[10px] font-black uppercase italic animate-pulse tracking-[0.4em] bg-green-500/5 px-8 py-4 rounded-full border border-green-500/10">Neural Panel Active v2.3</div>
                    </GlassCard>
                    <GlassCard className="!p-10 border-white/5 bg-black/40 shadow-inner">
@@ -314,8 +495,8 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
           </div>
         )}
 
-        {/* Fallback para Abas Vazias */}
-        {activeTab !== 'integracoes' && (
+        {/* FALLBACKS */}
+        {(activeTab === 'overview' || activeTab === 'agentes') && (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-20 relative z-10">
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-orange-500/5 rounded-full blur-[120px]"></div>
              <Activity size={80} className="text-orange-500/30 animate-pulse mb-8" />
@@ -338,56 +519,27 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                 animate={{ scale: 1, y: 0 }} 
                 className="bg-[#0c0c0c] border border-white/10 p-12 md:p-16 rounded-[4rem] max-w-lg w-full relative text-center shadow-[0_0_120px_rgba(255,115,0,0.1)]"
               >
-                <button 
-                  onClick={() => { 
-                    setQrCodeModal(p => ({ ...p, isOpen: false })); 
-                    isPollingRef.current = false; 
-                    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-                  }} 
-                  className="absolute top-12 right-12 text-gray-700 hover:text-white transition-all transform hover:rotate-90 p-2"
-                >
+                <button onClick={() => { setQrCodeModal(p => ({ ...p, isOpen: false })); isPollingRef.current = false; }} className="absolute top-12 right-12 text-gray-700 hover:text-white transition-all transform hover:rotate-90 p-2">
                   <X size={32} />
                 </button>
-                
                 <Logo size="sm" className="mb-12 mx-auto" />
-
-                <div className="bg-white p-10 rounded-[3rem] aspect-square flex items-center justify-center border-8 border-orange-500/10 overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.1)] relative mx-auto mb-12 min-h-[320px]">
+                <div className="bg-white p-10 rounded-[3rem] aspect-square flex items-center justify-center border-8 border-orange-500/10 overflow-hidden relative mx-auto mb-12 min-h-[320px]">
                    {qrCodeModal.code === 'CONNECTED' ? (
                      <div className="flex flex-col items-center">
                         <CheckCircle2 size={140} className="text-green-500 mb-6 drop-shadow-[0_0_20px_rgba(34,197,94,0.4)]" />
                         <span className="text-[14px] font-black uppercase text-green-500 tracking-[0.3em] italic">Engine Sincronizada</span>
                      </div>
                    ) : qrCodeModal.code ? (
-                     <img 
-                       src={qrCodeModal.code} 
-                       className="w-full h-full object-contain animate-in fade-in zoom-in duration-500" 
-                       alt="QR Code Ativo" 
-                       key={qrCodeModal.code} 
-                     />
+                     <img src={qrCodeModal.code} className="w-full h-full object-contain animate-in fade-in zoom-in duration-500" alt="QR Code" key={qrCodeModal.code} />
                    ) : (
-                     <div className="flex flex-col items-center gap-8">
+                     <div className="flex flex-col items-center gap-8 text-black">
                         <Loader2 className="animate-spin text-orange-500" size={70} />
-                        <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest italic animate-pulse">{qrCodeModal.status}</span>
+                        <span className="text-[11px] font-black uppercase text-gray-400 tracking-widest italic">{qrCodeModal.status}</span>
                      </div>
                    )}
                 </div>
-
-                <div className="space-y-4 mb-10">
-                  <h3 className="text-4xl font-black uppercase italic tracking-tighter italic leading-none">Conexão <span className="text-orange-500">Neural.</span></h3>
-                  <p className="text-[14px] font-black uppercase tracking-[0.2em] text-gray-400 italic animate-pulse">{qrCodeModal.status}</p>
-                  <div className="inline-block px-6 py-2 bg-orange-500/5 rounded-full border border-orange-500/10">
-                    <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest italic">{qrCodeModal.name}</span>
-                  </div>
-                </div>
-
-                {!qrCodeModal.code && !qrCodeModal.isBooting && (
-                  <button 
-                    onClick={() => connectInstance(qrCodeModal.name)} 
-                    className="text-[10px] font-black uppercase text-orange-500 underline underline-offset-8 tracking-widest hover:text-orange-400 transition-colors"
-                  >
-                    O QR Code não carregou? Clique para forçar refresh
-                  </button>
-                )}
+                <h3 className="text-4xl font-black uppercase italic tracking-tighter mb-4">Conexão <span className="text-orange-500">Neural.</span></h3>
+                <p className="text-[14px] font-black uppercase tracking-[0.2em] text-gray-400 italic animate-pulse">{qrCodeModal.status}</p>
               </motion.div>
             </motion.div>
           )}
