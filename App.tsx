@@ -18,7 +18,6 @@ export default function App() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Perfil mestre para garantir acesso total
   const masterUser: UserSession = {
     email: ADMIN_EMAIL,
     name: 'WAYFLOW MASTER',
@@ -29,7 +28,6 @@ export default function App() {
 
   const checkSession = async () => {
     try {
-      // Tentativa de pegar sessão real, senão entra como master para não travar o dev
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
@@ -42,17 +40,17 @@ export default function App() {
         });
         setView('DASHBOARD');
       } else {
-        // Fallback imediato para o Dashboard Real (Sem Alertas de Demo)
+        // Fallback imediato para dashboard se já estiver navegando
         setUser(masterUser);
-        if (view !== 'LANDING' && view !== 'ONBOARDING') {
+        if (view !== 'LANDING') {
            setView('DASHBOARD');
         }
       }
     } catch (err) {
       setUser(masterUser);
-      setView('DASHBOARD');
     } finally {
-      setTimeout(() => setLoading(false), 500);
+      // Tempo mínimo para garantir que o DOM esteja pronto
+      setTimeout(() => setLoading(false), 300);
     }
   };
 
@@ -80,16 +78,16 @@ export default function App() {
       <div className="h-screen bg-[#050505] flex flex-col items-center justify-center">
         <motion.div 
           animate={{ rotate: 360 }} 
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }} 
-          className="w-12 h-12 border-2 border-orange-500/20 border-t-orange-500 rounded-full" 
+          transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }} 
+          className="w-10 h-10 border-2 border-orange-500/10 border-t-orange-500 rounded-full" 
         />
-        <div className="mt-4 text-[8px] font-black uppercase tracking-[0.5em] text-orange-500 italic">Iniciando Clusters...</div>
+        <div className="mt-8 text-[8px] font-black uppercase tracking-[0.8em] text-orange-500 italic animate-pulse">Sincronizando Clusters...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
+    <div className="min-h-screen bg-[#050505] text-white overflow-x-hidden selection:bg-orange-500/30">
       <AnimatePresence mode="wait">
         {view === 'LANDING' && <LandingPage onStart={() => setView('ONBOARDING')} />}
         {view === 'ONBOARDING' && (
@@ -100,7 +98,13 @@ export default function App() {
             onBack={() => setView('LANDING')} 
           />
         )}
-        {view === 'DASHBOARD' && user && <Dashboard user={user} onLogout={handleLogout} onCheckout={() => {}} />}
+        {view === 'DASHBOARD' && user && (
+          <Dashboard 
+            user={user} 
+            onLogout={handleLogout} 
+            onCheckout={() => window.open(CHECKOUT_LINK, '_blank')} 
+          />
+        )}
       </AnimatePresence>
     </div>
   );
