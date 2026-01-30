@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -7,7 +8,7 @@ import {
   Search, Send, User, CheckCircle2, Terminal, 
   Database, Bot, Kanban as KanbanIcon, Clock, Zap,
   Users, MoreVertical, Paperclip, Smile, Filter,
-  Check, ChevronRight
+  Check, ChevronRight, UserPlus
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance, Ticket, Message } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -20,15 +21,9 @@ interface DashboardProps {
   onCheckout?: () => void;
 }
 
-// Dados iniciais para o Terminal
-const INITIAL_COLUMNS: Record<string, Ticket[]> = {
-  'novo': [
-    { id: '1', contactName: 'Anderson Dreger', contactPhone: '45999045858', lastMessage: 'Preciso de um orçamento neural.', sentiment: 'happy', time: '10:30', status: 'novo', unreadCount: 2, protocol: '2025001', messages: [], assignedTo: 'Master' },
-    { id: '2', contactName: 'Marlon Rocha', contactPhone: '45999887766', lastMessage: 'A engine parou de rodar.', sentiment: 'neutral', time: '09:15', status: 'novo', unreadCount: 0, protocol: '2025002', messages: [], assignedTo: 'Master' }
-  ],
-  'em_atendimento': [
-    { id: '3', contactName: 'Suporte WayFlow', contactPhone: '45988223344', lastMessage: 'Sincronização em andamento.', sentiment: 'happy', time: '08:00', status: 'em_atendimento', unreadCount: 0, protocol: '2025003', messages: [], assignedTo: 'Master' }
-  ],
+const EMPTY_COLUMNS: Record<string, Ticket[]> = {
+  'novo': [],
+  'em_atendimento': [],
   'finalizado': []
 };
 
@@ -38,15 +33,13 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [newInstanceName, setNewInstanceName] = useState('');
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [logs, setLogs] = useState<string[]>(['> WayFlow Neural System v3.1 Booted', '> Cluster: Sincronizado com Evolution API']);
   
-  // Terminal States
-  // FIX: Explicitly typing the columns state to avoid 'unknown' type errors during access.
-  const [columns, setColumns] = useState<Record<string, Ticket[]>>(INITIAL_COLUMNS);
+  const [columns, setColumns] = useState<Record<string, Ticket[]>>(EMPTY_COLUMNS);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState('');
 
-  // Modal de Conexão
   const [qrCodeModal, setQrCodeModal] = useState({ 
     isOpen: false, code: '', name: '', status: 'Iniciando...', isBooting: true 
   });
@@ -64,6 +57,86 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     setLogs(prev => [`> ${msg}`, ...prev.slice(0, 5)]);
   };
 
+  // FUNÇÃO MESTRE: BUSCA TODOS OS CONTATOS E CHATS
+  const fetchAllContacts = async (instanceName: string) => {
+    setIsSyncing(true);
+    addLog(`Neural Sync: Escaneando agenda e chats de ${instanceName}...`);
+    
+    try {
+      // 1. Tenta buscar CHATS RECENTES
+      const chatRes = await fetch(`${getBaseUrl()}/chat/fetchChats/${instanceName}`, { headers: getHeaders() });
+      const chatsData = await chatRes.json();
+      
+      // 2. Tenta buscar TODOS OS CONTATOS (Agenda)
+      const contactRes = await fetch(`${getBaseUrl()}/chat/fetchContacts/${instanceName}`, { headers: getHeaders() });
+      const contactsData = await contactRes.json();
+
+      const allChats = Array.isArray(chatsData) ? chatsData : (chatsData?.chats || []);
+      const allContacts = Array.isArray(contactsData) ? contactsData : (contactsData?.contacts || []);
+
+      // Merge de dados para evitar duplicidade e garantir nomes
+      const contactMap = new Map();
+
+      // Prioridade 1: Chats (têm última mensagem)
+      allChats.forEach((c: any) => {
+        const id = c.id || c.remoteJid;
+        if (!id) return;
+        contactMap.set(id, {
+          id,
+          contactName: c.name || c.pushName || id.split('@')[0],
+          contactPhone: id.split('@')[0],
+          lastMessage: c.lastMessage?.message?.conversation || 
+                       c.lastMessage?.message?.extendedTextMessage?.text || 
+                       "Conversa iniciada",
+          time: c.lastMessage?.messageTimestamp 
+                ? new Date(c.lastMessage.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '--:--',
+          unreadCount: c.unreadCount || 0
+        });
+      });
+
+      // Prioridade 2: Contatos da Agenda (preenche quem não tem chat ativo)
+      allContacts.forEach((c: any) => {
+        const id = c.id || c.remoteJid;
+        if (!id || contactMap.has(id)) return;
+        contactMap.set(id, {
+          id,
+          contactName: c.name || c.pushName || id.split('@')[0],
+          contactPhone: id.split('@')[0],
+          lastMessage: "Sem mensagens recentes",
+          time: "Agenda",
+          unreadCount: 0
+        });
+      });
+
+      const finalTickets: Ticket[] = Array.from(contactMap.values()).map(item => ({
+        ...item,
+        sentiment: 'neutral',
+        status: 'novo',
+        protocol: item.contactPhone,
+        messages: [],
+        assignedTo: 'Master'
+      }));
+
+      // Só atualiza a coluna se encontrarmos algo real
+      if (finalTickets.length > 0) {
+        setColumns(prev => ({
+          ...prev,
+          'novo': finalTickets
+        }));
+        addLog(`Cluster Sync: ${finalTickets.length} contatos reais carregados.`);
+      } else {
+        addLog(`Neural Alert: Nenhum contato encontrado em ${instanceName}.`);
+      }
+
+    } catch (err) {
+      console.error("Erro na sincronização neural:", err);
+      addLog("ERRO: Falha crítica ao baixar contatos.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const fetchInstances = async () => {
     try {
       const res = await fetch(`${getBaseUrl()}/instance/fetchInstances`, { headers: getHeaders() });
@@ -72,19 +145,23 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
       const list = Array.isArray(data) ? data : (data?.instances || []);
       
       const mapped = list.map((inst: any) => {
-        // Normalização robusta de status
-        const rawStatus = (inst.status || inst.connectionStatus || inst.state || '').toLowerCase();
+        const rawStatus = (inst.status || inst.connectionStatus || inst.state || inst.instance?.status || '').toLowerCase();
         const isConnected = rawStatus.includes('open') || 
                            rawStatus.includes('connected') || 
                            rawStatus.includes('connected_service') ||
-                           inst.status === 'open';
+                           inst.status === 'open' || inst.instance?.status === 'open';
+
+        // Se estiver conectado, puxa os contatos reais
+        if (isConnected) {
+          fetchAllContacts(inst.instanceName || inst.name);
+        }
 
         return {
           id: inst.instanceId || inst.instanceName || inst.name,
           name: inst.instanceName || inst.name,
           status: isConnected ? 'CONNECTED' : 'DISCONNECTED' as any,
           phone: inst.ownerJid?.split('@')[0] || inst.number || 'OFFLINE',
-          leadCount: inst.leadCount || Math.floor(Math.random() * 500) + 120 
+          leadCount: inst.leadCount || 0
         };
       });
 
@@ -101,22 +178,21 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     if (!destination) return;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-    const sourceCol = Array.from(columns[source.droppableId]);
-    const destCol = Array.from(columns[destination.droppableId]);
-    const [movedTicket] = sourceCol.splice(source.index, 1);
+    const sourceCol = Array.from(columns[source.droppableId]) as Ticket[];
+    const destCol = Array.from(columns[destination.droppableId]) as Ticket[];
+    const [movedTicket] = sourceCol.splice(source.index, 1) as Ticket[];
     
-    // Atualiza status do ticket movido
-    // FIX: movedTicket is now correctly typed as Ticket.
-    movedTicket.status = destination.droppableId as any;
-    destCol.splice(destination.index, 0, movedTicket);
+    if (movedTicket) {
+      movedTicket.status = destination.droppableId as any;
+      destCol.splice(destination.index, 0, movedTicket);
 
-    setColumns({
-      ...columns,
-      [source.droppableId]: sourceCol,
-      [destination.droppableId]: destCol
-    });
-    // FIX: movedTicket is correctly typed as Ticket, so 'id' exists.
-    addLog(`Neural Flow: Ticket ${movedTicket.id} movido para ${destination.droppableId.toUpperCase()}`);
+      setColumns({
+        ...columns,
+        [source.droppableId]: sourceCol,
+        [destination.droppableId]: destCol
+      });
+      addLog(`Mover: ${movedTicket.contactName} -> ${destination.droppableId.toUpperCase()}`);
+    }
   };
 
   const startQrPolling = (name: string) => {
@@ -128,7 +204,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
       try {
         const res = await fetch(`${getBaseUrl()}/instance/connect/${name}`, { headers: getHeaders() });
         const data = await res.json();
-        
         const state = (data?.instance?.state || data?.state || data?.status || data?.instance?.status || '').toLowerCase();
         
         if (state.includes('open') || state.includes('connected')) {
@@ -171,7 +246,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     const name = newInstanceName.toUpperCase().replace(/\s+/g, '_');
     setIsCreatingInstance(true);
     try {
-      addLog(`Cluster: Iniciando provisionamento de ${name}`);
+      addLog(`Cluster: Provisionando ${name}`);
       const res = await fetch(`${getBaseUrl()}/instance/create`, {
         method: 'POST',
         headers: getHeaders(),
@@ -199,9 +274,18 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     } catch (err) {}
   };
 
+  const forceSyncAll = () => {
+    const connected = instances.find(i => i.status === 'CONNECTED');
+    if (connected) {
+      fetchAllContacts(connected.name);
+    } else {
+      fetchInstances();
+    }
+  };
+
   useEffect(() => {
     fetchInstances();
-    const inv = setInterval(fetchInstances, 45000);
+    const inv = setInterval(fetchInstances, 60000);
     return () => {
       clearInterval(inv);
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
@@ -221,7 +305,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     <div className="flex h-screen bg-[#050505] overflow-hidden text-white font-sans selection:bg-orange-500/30">
       <div className="fixed inset-0 grid-engine pointer-events-none opacity-[0.03]"></div>
 
-      {/* Sidebar Neural */}
       <aside className="w-[280px] border-r border-white/5 flex flex-col p-8 bg-black/60 backdrop-blur-3xl z-50">
         <Logo size="sm" className="mb-12" />
         <nav className="flex-1 space-y-3">
@@ -249,7 +332,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
       <main className="flex-1 flex flex-col relative overflow-hidden bg-[#070707]">
         
-        {/* ABA: TERMINAL ATIVO (KANBAN + CHAT) */}
         {activeTab === 'atendimento' && (
           <div className="flex-1 flex overflow-hidden">
             <DragDropContext onDragEnd={handleDragEnd}>
@@ -258,12 +340,18 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                   <div className="flex items-center justify-between mb-8">
                     <h2 className="text-3xl font-black italic uppercase tracking-tighter">Terminal <span className="text-orange-500">Live.</span></h2>
                     <div className="flex gap-2">
-                       <button className="p-3 glass rounded-xl text-gray-600 hover:text-white transition-all"><Filter size={16}/></button>
+                       <button 
+                         onClick={forceSyncAll} 
+                         disabled={isSyncing}
+                         className={`p-3 glass rounded-xl text-gray-600 hover:text-white transition-all ${isSyncing ? 'animate-spin text-orange-500' : ''}`}
+                       >
+                         <RefreshCw size={16}/>
+                       </button>
                     </div>
                   </div>
                   <div className="relative">
                     <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-700" size={16} />
-                    <input placeholder="Filtrar neuralmente..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-4 pl-14 pr-6 text-xs uppercase font-bold outline-none focus:border-orange-500/40 transition-all" />
+                    <input placeholder="Procurar nos contatos reais..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-4 pl-14 pr-6 text-xs uppercase font-bold outline-none focus:border-orange-500/40 transition-all" />
                   </div>
                 </div>
 
@@ -274,7 +362,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                       <div key={colId} className="space-y-4">
                         <div className="flex items-center justify-between px-2">
                            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500 italic">
-                             {/* FIX: typedTickets has length property. */}
                              {colId.replace('_', ' ')} <span className="text-orange-500/40 ml-2">{typedTickets.length}</span>
                            </span>
                            <div className="w-1.5 h-1.5 rounded-full bg-orange-500/20" />
@@ -283,8 +370,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                         <Droppable droppableId={colId}>
                           {(provided) => (
                             <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3 min-h-[50px]">
-                              {/* FIX: typedTickets has map property. */}
-                              {typedTickets.map((ticket, index) => (
+                              {typedTickets.length > 0 ? typedTickets.map((ticket, index) => (
                                 <Draggable key={ticket.id} draggableId={ticket.id} index={index}>
                                   {(provided, snapshot) => (
                                     <div
@@ -321,7 +407,11 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                                     </div>
                                   )}
                                 </Draggable>
-                              ))}
+                              )) : (
+                                <div className="text-[9px] text-gray-800 uppercase font-black text-center py-4 tracking-widest">
+                                  {isSyncing ? "Baixando Agenda..." : "Engine Vazia"}
+                                </div>
+                              )}
                               {provided.placeholder}
                             </div>
                           )}
@@ -333,7 +423,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
               </div>
             </DragDropContext>
 
-            {/* AREA DE CHAT */}
             <div className="flex-1 flex flex-col bg-black/40">
               {selectedTicket ? (
                 <>
@@ -345,14 +434,13 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                         <div>
                            <h3 className="text-2xl font-black uppercase italic tracking-tighter leading-none mb-2">{selectedTicket.contactName}</h3>
                            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-gray-500 italic">
-                              <span className="text-green-500">Atendimento Ativo</span>
+                              <span className="text-green-500">Online</span>
                               <span>|</span>
-                              <span>ID: {selectedTicket.protocol}</span>
+                              <span>+{selectedTicket.contactPhone}</span>
                            </div>
                         </div>
                      </div>
                      <div className="flex gap-4">
-                        <button className="p-4 glass rounded-[1.5rem] text-gray-600 hover:text-white transition-all"><Users size={18}/></button>
                         <button className="p-4 glass rounded-[1.5rem] text-gray-600 hover:text-white transition-all"><Zap size={18}/></button>
                         <button className="p-4 glass rounded-[1.5rem] text-red-500/30 hover:text-red-500 transition-all"><Trash2 size={18}/></button>
                      </div>
@@ -360,7 +448,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
                   <div className="flex-1 overflow-y-auto custom-scrollbar p-12 space-y-8">
                      <div className="flex justify-center">
-                        <span className="bg-white/5 px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest text-gray-500">Conversa Iniciada em {selectedTicket.time}</span>
+                        <span className="bg-white/5 px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest text-gray-500 italic">Neural Encryption Active</span>
                      </div>
                      
                      <div className="flex flex-col gap-6">
@@ -370,15 +458,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                               <p className="text-xs leading-relaxed">{selectedTicket.lastMessage}</p>
                               <div className="mt-3 flex items-center gap-2 text-[8px] font-black text-gray-600 italic">
                                  {selectedTicket.time} • <Check size={10} className="text-orange-500"/>
-                              </div>
-                           </div>
-                        </div>
-
-                        <div className="flex flex-col items-end gap-2">
-                           <div className="max-w-[70%] bg-orange-600 text-white p-6 rounded-[2rem] rounded-br-none shadow-2xl shadow-orange-600/20">
-                              <p className="text-xs leading-relaxed font-bold">Olá! Como a WayFlow Neural pode acelerar seus resultados hoje?</p>
-                              <div className="mt-3 text-[8px] font-black text-white/50 italic text-right">
-                                 10:35 • <Check size={10}/>
                               </div>
                            </div>
                         </div>
@@ -392,7 +471,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                            <input 
                              value={messageInput}
                              onChange={e => setMessageInput(e.target.value)}
-                             placeholder="Digite sua mensagem neural..." 
+                             placeholder="Responder contato..." 
                              className="w-full bg-white/[0.02] border border-white/10 rounded-[2rem] py-6 px-10 text-sm outline-none focus:border-orange-500 transition-all shadow-inner" 
                            />
                            <button className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-700 hover:text-orange-500 transition-all">
@@ -408,15 +487,14 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center opacity-20 text-center">
                   <Logo size="md" className="mb-12 grayscale" />
-                  <h3 className="text-4xl font-black uppercase italic tracking-tighter">Terminal em <span className="text-orange-500">Stand-by.</span></h3>
-                  <p className="mt-4 text-[10px] font-black uppercase tracking-[0.4em]">Selecione um contato para iniciar o fluxo neural</p>
+                  <h3 className="text-4xl font-black uppercase italic tracking-tighter">Cluster <span className="text-orange-500">Neural.</span></h3>
+                  <p className="mt-4 text-[10px] font-black uppercase tracking-[0.4em]">Selecione um contato real da agenda para começar</p>
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* ABA: ENGINES (Integrações) */}
         {activeTab === 'integracoes' && (
           <div className="flex-1 p-12 lg:p-20 overflow-y-auto custom-scrollbar relative z-10">
              <header className="mb-20">
@@ -461,7 +539,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                                     <span className="text-white/10">|</span>
                                     <div className="flex items-center gap-1 text-blue-500 uppercase tracking-widest">
                                        <Users size={10} />
-                                       {inst.leadCount} Contatos
+                                       Sync Agenda
                                     </div>
                                  </div>
                               </div>
@@ -481,21 +559,11 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                       <h3 className="text-4xl font-black uppercase italic tracking-tighter mb-4">Evolution Core</h3>
                       <div className="text-green-500 text-[10px] font-black uppercase italic animate-pulse tracking-[0.4em] bg-green-500/5 px-8 py-4 rounded-full border border-green-500/10">Neural Panel Active v2.3</div>
                    </GlassCard>
-                   <GlassCard className="!p-10 border-white/5 bg-black/40 shadow-inner">
-                      <div className="flex items-center gap-4 mb-6">
-                        <Terminal size={18} className="text-gray-700" />
-                        <span className="text-[10px] font-black uppercase text-gray-500">Neural Sync Logs</span>
-                      </div>
-                      <div className="w-full bg-black/40 p-6 rounded-2xl font-mono text-[10px] text-green-500/40 space-y-2 h-[200px] overflow-hidden border border-white/5">
-                         {logs.map((log, i) => <div key={i}>{log}</div>)}
-                      </div>
-                   </GlassCard>
                 </div>
              </div>
           </div>
         )}
 
-        {/* FALLBACKS */}
         {(activeTab === 'overview' || activeTab === 'agentes') && (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-20 relative z-10">
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-orange-500/5 rounded-full blur-[120px]"></div>
@@ -505,7 +573,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
           </div>
         )}
 
-        {/* MODAL QR CODE */}
         <AnimatePresence>
           {qrCodeModal.isOpen && (
             <motion.div 
