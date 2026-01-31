@@ -1,7 +1,7 @@
 
 export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD' | 'THANK_YOU';
 
-export type DashboardTab = 'overview' | 'atendimento' | 'kanban' | 'integracoes' | 'settings';
+export type DashboardTab = 'overview' | 'atendimento' | 'kanban' | 'integracoes' | 'agentes' | 'settings';
 
 export type SubscriptionStatus = 'ACTIVE' | 'TRIALING' | 'EXPIRED' | 'INACTIVE';
 
@@ -56,6 +56,7 @@ export interface Ticket {
   assignedTo: string;
   protocol: string;
   messages: Message[];
+  instanceSource: string; // Nova propriedade para saber de qual chip veio o lead
 }
 
 export interface KanbanColumn {
