@@ -48,7 +48,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/fetchInstances`, { headers: HEADERS });
       const data = await res.json();
-      const raw = Array.isArray(data) ? data : (data?.data || data?.instances || []);
+      
+      // Deep discovery para instâncias
+      const findInstances = (obj: any): any[] => {
+        if (Array.isArray(obj)) return obj;
+        if (!obj || typeof obj !== 'object') return [];
+        if (Array.isArray(obj.instances)) return obj.instances;
+        if (Array.isArray(obj.data)) return obj.data;
+        return [];
+      };
+
+      const raw = findInstances(data);
       
       const mapped = raw.map((item: any) => {
         const inst = item.instance || item;
@@ -132,40 +142,76 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     fetchInstances();
   };
 
-  // --- CRM & ATENDIMENTO (SINCROIZAÇÃO ROBUSTA) ---
+  // --- MOTOR DE SINCRONIZAÇÃO ULTRA-ROBUSTO (DEEP DISCOVERY) ---
   const syncChats = async () => {
     const connectedOnes = instances.filter(i => i.status === 'CONNECTED');
-    if (connectedOnes.length === 0) return;
+    if (connectedOnes.length === 0) {
+      console.warn("WAYFLOW: Nenhum chip online detectado.");
+      return;
+    }
     
     setIsSyncing(true);
     let allLeads: Ticket[] = [];
+
+    // Função recursiva para encontrar arrays de dados em qualquer estrutura JSON
+    const findArray = (obj: any): any[] => {
+      if (Array.isArray(obj)) return obj;
+      if (!obj || typeof obj !== 'object') return [];
+      
+      const priorityKeys = ['chats', 'contacts', 'data', 'instance', 'instances', 'records', 'messages'];
+      for (const key of priorityKeys) {
+        if (Array.isArray(obj[key])) return obj[key];
+        if (obj[key] && typeof obj[key] === 'object') {
+          const nested = findArray(obj[key]);
+          if (nested.length > 0) return nested;
+        }
+      }
+
+      // Fallback radical: qualquer propriedade que seja array e tenha itens
+      for (const key in obj) {
+        if (Array.isArray(obj[key]) && obj[key].length > 0) return obj[key];
+      }
+      return [];
+    };
     
     for (const inst of connectedOnes) {
       try {
-        // Tenta buscar Chats primeiro (Conversas Ativas)
-        const resChats = await fetch(`${EVOLUTION_URL}/chat/fetchChats/${inst.name}`, { headers: HEADERS });
-        const dataChats = await resChats.json();
-        const rawChats = Array.isArray(dataChats) ? dataChats : (dataChats?.data || dataChats?.chats || []);
-        
-        // Se chats vierem vazios, tenta buscar Contatos (Lista Telefônica)
-        let sourceArray = rawChats;
-        if (sourceArray.length === 0) {
-          const resContacts = await fetch(`${EVOLUTION_URL}/chat/fetchContacts/${inst.name}`, { headers: HEADERS });
-          const dataContacts = await resContacts.json();
-          sourceArray = Array.isArray(dataContacts) ? dataContacts : (dataContacts?.data || dataContacts?.contacts || []);
-        }
+        // Busca paralela de Chats e Contatos
+        const [rChats, rContacts] = await Promise.all([
+          fetch(`${EVOLUTION_URL}/chat/fetchChats/${inst.name}`, { headers: HEADERS }),
+          fetch(`${EVOLUTION_URL}/chat/fetchContacts/${inst.name}`, { headers: HEADERS })
+        ]);
 
-        for (const c of sourceArray) {
-          const jid = c.id || c.remoteJid || c.jid;
-          if (!jid || jid.includes('@g.us')) continue;
-          
+        const dataChats = rChats.ok ? await rChats.json() : null;
+        const dataContacts = rContacts.ok ? await rContacts.json() : null;
+
+        const rawChats = findArray(dataChats);
+        const rawContacts = findArray(dataContacts);
+        const merged = [...rawChats, ...rawContacts];
+
+        console.log(`[Neural Sync] ${inst.name} -> Encontrados: ${merged.length}`);
+
+        merged.forEach(c => {
+          // JID Detection: Crucial para renderizar
+          const jid = c.id || c.remoteJid || c.jid || (c.key && c.key.remoteJid) || c.remote_jid;
+          if (!jid || typeof jid !== 'string' || jid.includes('@g.us')) return;
+
+          // Nome: Fallback para o número se não houver nome
+          const name = c.name || c.pushname || c.pushName || c.verifiedName || c.notify || jid.split('@')[0];
+
+          // Evita duplicatas globais
+          if (allLeads.some(l => l.id === jid)) return;
+
           allLeads.push({
             id: jid,
-            contactName: c.name || c.pushname || c.verifiedName || jid.split('@')[0],
+            contactName: name,
             contactPhone: jid.split('@')[0],
             avatar: "", 
-            lastMessage: c.lastMessage?.message?.conversation || "Conversa iniciada",
-            time: new Date((c.lastMessage?.messageTimestamp || Date.now()/1000) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            lastMessage: c.lastMessage?.message?.conversation || 
+                         c.lastMessage?.conversation || 
+                         c.message?.conversation || 
+                         "Ativo no WhatsApp",
+            time: new Date((c.lastMessage?.messageTimestamp || c.messageTimestamp || Date.now()/1000) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'novo',
             unreadCount: c.unreadCount || 0,
             assignedTo: 'Neural Agent',
@@ -174,28 +220,34 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             messages: [],
             instanceSource: inst.name
           } as Ticket);
-        }
+        });
       } catch (e) {
-        console.error("Erro sync:", e);
+        console.error(`Falha crítica na engine ${inst.name}:`, e);
       }
     }
     
-    // Unificar e remover duplicatas pelo ID
-    const uniqueLeads = Array.from(new Map(allLeads.map(item => [item.id, item])).values());
-    setLeads(uniqueLeads);
+    // Ordenação Final (Os mais recentes no topo)
+    const finalLeads = allLeads.sort((a, b) => {
+      return b.time.localeCompare(a.time);
+    });
+
+    setLeads(finalLeads);
     setIsSyncing(false);
 
-    // Background: Buscar avatares para os 15 primeiros
-    uniqueLeads.slice(0, 15).forEach(async (lead) => {
+    // Background: Busca de Avatares (Otimizado para os primeiros 20)
+    finalLeads.slice(0, 20).forEach(async (lead) => {
       try {
         const profileRes = await fetch(`${EVOLUTION_URL}/chat/fetchProfilePictureUrl/${lead.instanceSource}`, {
           method: 'POST',
           headers: HEADERS,
           body: JSON.stringify({ number: lead.contactPhone })
         });
-        const profileData = await profileRes.json();
-        if (profileData.profilePictureUrl) {
-          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, avatar: profileData.profilePictureUrl } : l));
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          const url = profileData.profilePictureUrl || profileData.url;
+          if (url) {
+            setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, avatar: url } : l));
+          }
         }
       } catch (e) {}
     });
@@ -209,15 +261,24 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         body: JSON.stringify({ remoteJid: lead.id, count: 25 })
       });
       const data = await res.json();
-      const raw = Array.isArray(data) ? data : (data?.messages || data?.data || []);
       
+      const findMessages = (obj: any): any[] => {
+        if (Array.isArray(obj)) return obj;
+        if (obj?.messages && Array.isArray(obj.messages)) return obj.messages;
+        if (obj?.data && Array.isArray(obj.data)) return obj.data;
+        return [];
+      };
+
+      const raw = findMessages(data);
+      
+      // Fixing the TypeScript error by casting literal strings to the expected union types defined in 'Message'.
       const mapped: Message[] = raw.map((m: any) => ({
         id: m.key.id,
-        text: m.message?.conversation || m.message?.extendedTextMessage?.text || "📎 Mídia recebida",
-        sender: m.key.fromMe ? 'me' : 'contact',
+        text: m.message?.conversation || m.message?.extendedTextMessage?.text || "📎 Mídia do WhatsApp",
+        sender: (m.key.fromMe ? 'me' : 'contact') as 'me' | 'contact',
         time: new Date((m.messageTimestamp || Date.now()/1000) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'read',
-        type: 'text'
+        status: 'read' as 'read',
+        type: 'text' as 'text'
       })).reverse();
       
       setChatMessages(mapped);
@@ -238,13 +299,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         })
       });
       if (res.ok) {
+        // Fixing the TypeScript error by casting literal strings to the expected union types defined in 'Message'.
         setChatMessages(prev => [...prev, {
           id: Date.now().toString(),
           text: messageInput,
-          sender: 'me',
+          sender: 'me' as 'me',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: 'sent',
-          type: 'text'
+          status: 'sent' as 'sent',
+          type: 'text' as 'text'
         }]);
         setMessageInput('');
       }
@@ -257,9 +319,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // Sincroniza automaticamente ao entrar na aba de atendimento
   useEffect(() => {
-    if (activeTab === 'atendimento') syncChats();
-  }, [activeTab]);
+    if (activeTab === 'atendimento' && instances.length > 0) {
+      syncChats();
+    }
+  }, [activeTab, instances.length]);
 
   const currentLead = useMemo(() => leads.find(l => l.id === selectedLeadId), [selectedLeadId, leads]);
   useEffect(() => { if (currentLead) loadHistory(currentLead); }, [currentLead]);
@@ -375,7 +440,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             <div className="w-[350px] lg:w-[420px] border-r border-white/5 flex flex-col bg-black/30 backdrop-blur-3xl z-10">
               <header className="p-8 border-b border-white/5 flex items-center justify-between bg-black/20">
                 <h3 className="text-sm font-black uppercase italic tracking-[0.2em] text-orange-500">Neural CRM</h3>
-                <button onClick={syncChats} className={`p-2 glass rounded-lg ${isSyncing ? 'animate-spin text-orange-500' : 'text-gray-600 hover:text-orange-500'}`}><RefreshCw size={14} /></button>
+                <button 
+                  onClick={syncChats} 
+                  disabled={isSyncing}
+                  className={`p-2 glass rounded-lg transition-all ${isSyncing ? 'animate-spin text-orange-500' : 'text-gray-600 hover:text-orange-500'}`}
+                >
+                  <RefreshCw size={14} />
+                </button>
               </header>
               <div className="p-6">
                 <div className="relative group">
@@ -386,9 +457,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               
               <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
                 {isSyncing ? (
-                  <div className="flex flex-col items-center justify-center h-40 opacity-40 gap-3">
-                    <Loader2 className="animate-spin text-orange-500" size={30} />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Escaneando Nuvem...</span>
+                  <div className="flex flex-col items-center justify-center h-60 opacity-60 gap-4">
+                    <Loader2 className="animate-spin text-orange-500" size={40} />
+                    <div className="text-center">
+                      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white">Neural Handshake</p>
+                      <p className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-600 mt-1">Extraindo clusters de contatos...</p>
+                    </div>
                   </div>
                 ) : leads.length > 0 ? (
                   leads.map(lead => (
@@ -396,7 +470,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                       key={lead.id} onClick={() => setSelectedLeadId(lead.id)}
                       className={`w-full flex items-center gap-4 p-5 rounded-[2.5rem] transition-all text-left border relative group ${selectedLeadId === lead.id ? 'bg-orange-600/10 border-orange-500/20 shadow-xl' : 'hover:bg-white/[0.02] border-transparent'}`}
                     >
-                      <div className="w-12 h-12 rounded-2xl bg-orange-600/10 flex items-center justify-center text-orange-500 font-black italic text-xl border border-orange-500/10 group-hover:scale-110 transition-transform overflow-hidden shadow-inner">
+                      <div className="w-12 h-12 rounded-2xl bg-orange-600/10 flex items-center justify-center text-orange-500 font-black italic text-xl border border-orange-500/10 group-hover:scale-110 transition-transform overflow-hidden shadow-inner shrink-0">
                         {lead.avatar ? (
                           <img 
                             src={lead.avatar} 
@@ -419,9 +493,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     </button>
                   ))
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-40 opacity-20 text-center px-10">
-                    <Activity size={30} className="mb-4 text-orange-500" />
-                    <span className="text-[8px] font-black uppercase tracking-widest leading-relaxed">Nenhum lead detectado. Clique no ícone de girar acima para forçar sincronização.</span>
+                  <div className="flex flex-col items-center justify-center h-full opacity-40 text-center px-10 py-20">
+                    <div className="p-8 glass rounded-[3rem] mb-8 border-orange-500/20">
+                      <Activity size={48} className="text-orange-500 animate-pulse" />
+                    </div>
+                    <h4 className="text-[11px] font-black uppercase tracking-[0.4em] text-white mb-4 italic">Neural CRM Vazio</h4>
+                    <p className="text-[9px] font-black uppercase tracking-widest leading-relaxed text-gray-600 mb-8">
+                      Nenhum contato detectado nos chips conectados. Verifique a conexão ou clique abaixo para forçar varredura profunda.
+                    </p>
+                    <NeonButton onClick={syncChats} className="!px-8 !py-4 !text-[8px]">Forçar Deep Sync</NeonButton>
                   </div>
                 )}
               </div>
