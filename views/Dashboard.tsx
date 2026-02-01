@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -72,49 +73,31 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   };
 
   const handleCreate = async () => {
-    // Sanitizar nome: remover espaços e caracteres especiais que a Evolution API rejeita
     const sanitizedName = newInstanceName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
-    
-    if (!sanitizedName) {
-      alert("Por favor, insira um nome válido para a instância.");
-      return;
-    }
-
+    if (!sanitizedName) { alert("Nome inválido"); return; }
     setIsCreating(true);
     try {
-      // Endpoint Evolution v2 requer estrutura específica
       const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify({ 
           instanceName: sanitizedName, 
           token: Math.random().toString(36).substring(7),
-          integration: "WHATSAPP-BAILEYS", // Obrigatório em algumas versões da v2
+          integration: "WHATSAPP-BAILEYS",
           qrcode: true 
         })
       });
-      
       const data = await res.json();
-      
       if (res.ok || res.status === 201) {
-        const createdName = data.instance?.instanceName || sanitizedName;
         setNewInstanceName('');
         await fetchInstances();
-        // Delay pequeno para garantir que a engine processou a nova instância
-        setTimeout(() => openQR(createdName), 800);
+        setTimeout(() => openQR(sanitizedName), 800);
+      } else if (data.status === 409) {
+        openQR(sanitizedName);
       } else {
-        // Se a instância já existe, tentamos apenas conectar nela em vez de barrar o usuário
-        if (data.message?.includes('already exists') || data.status === 409) {
-          await fetchInstances();
-          openQR(sanitizedName);
-        } else {
-          alert("Erro na Engine: " + (data.message || "Verifique o nome e tente novamente."));
-        }
+        alert("Erro: " + (data.message || "Tente novamente"));
       }
-    } catch (e) { 
-      console.error("Erro handleCreate:", e);
-      alert("Falha de conexão com a Engine.");
-    } finally { setIsCreating(false); }
+    } catch (e) { console.error(e); } finally { setIsCreating(false); }
   };
 
   const openQR = async (name: string) => {
@@ -122,22 +105,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { headers: HEADERS });
       const data = await res.json();
-      
       if (data.base64) {
         setQrModal(p => ({ ...p, code: data.base64, status: 'Escanear agora!' }));
         pollConnection(name);
       } else if (data.message?.includes('already connected')) {
-        setQrModal(p => ({ ...p, status: 'Já conectado!', connected: true }));
+        setQrModal(p => ({ ...p, status: 'Conectado!', connected: true }));
         fetchInstances();
         setTimeout(() => setQrModal(p => ({ ...p, isOpen: false })), 2000);
-      } else {
-        setQrModal(p => ({ ...p, status: 'Aguardando QR...' }));
-        // Tenta novamente em 3 segundos se falhou a primeira geração
-        setTimeout(() => openQR(name), 3000);
       }
-    } catch (e) { 
-      setQrModal(p => ({ ...p, status: 'Erro ao conectar.' }));
-    }
+    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro na conexão' })); }
   };
 
   const pollConnection = (name: string) => {
@@ -146,50 +122,47 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         const res = await fetch(`${EVOLUTION_URL}/instance/connectionStatus/${name}`, { headers: HEADERS });
         const data = await res.json();
         const state = (data.instance?.state || data.state || '').toLowerCase();
-        
         if (state === 'open' || state === 'connected') {
-          setQrModal(p => ({ ...p, status: 'Conectado com Sucesso!', connected: true }));
+          setQrModal(p => ({ ...p, status: 'Conectado!', connected: true }));
           fetchInstances();
           clearInterval(interval);
           setTimeout(() => setQrModal(p => ({ ...p, isOpen: false })), 2000);
         }
-      } catch (e) { 
-        // Silenciosamente limpa se der erro contínuo
-        clearInterval(interval);
-      }
+      } catch (e) { clearInterval(interval); }
     }, 4000);
   };
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Deseja destruir o cluster ${name}?`)) return;
+    if (!confirm(`Deseja destruir ${name}?`)) return;
     try {
-      const res = await fetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: HEADERS });
-      if (res.ok) {
-        setInstances(prev => prev.filter(i => i.name !== name));
-        if (selectedLeadId) setSelectedLeadId(null);
-      } else {
-        alert("Não foi possível deletar a instância no momento.");
-      }
+      await fetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: HEADERS });
+      fetchInstances();
     } catch (e) { console.error(e); }
   };
 
-  // --- CRM & ATENDIMENTO ---
+  // --- CRM & ATENDIMENTO (AQUI ESTÁ A CHAVE) ---
   const syncChats = async () => {
     const connectedOnes = instances.filter(i => i.status === 'CONNECTED');
-    if (connectedOnes.length === 0) return;
+    if (connectedOnes.length === 0) {
+      console.warn("Nenhuma instância conectada para sincronizar chats.");
+      return;
+    }
     
     setIsSyncing(true);
     let allLeads: Ticket[] = [];
     
     for (const inst of connectedOnes) {
       try {
+        // Endpoint fetchChats da Evolution API v2
         const res = await fetch(`${EVOLUTION_URL}/chat/fetchChats/${inst.name}`, { headers: HEADERS });
         const data = await res.json();
-        const chats = Array.isArray(data) ? data : (data?.data || []);
+        
+        // A Evolution v2 as vezes retorna data.data ou apenas o array
+        const chats = Array.isArray(data) ? data : (data?.data || data?.chats || []);
         
         for (const c of chats) {
           const jid = c.id || c.remoteJid;
-          if (!jid || jid.includes('@g.us')) continue;
+          if (!jid || jid.includes('@g.us')) continue; // Pula grupos
           
           allLeads.push({
             id: jid,
@@ -207,13 +180,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             instanceSource: inst.name
           } as Ticket);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error(`Erro ao sincronizar chats da instância ${inst.name}:`, e);
+      }
     }
-    setLeads(allLeads);
+    
+    // Remove duplicatas se o mesmo contato estiver em duas instâncias (raro)
+    const uniqueLeads = Array.from(new Map(allLeads.map(item => [item.id, item])).values());
+    setLeads(uniqueLeads);
     setIsSyncing(false);
 
-    // BACKGROUND TASK: Tentar buscar avatares
-    allLeads.slice(0, 15).forEach(async (lead) => {
+    // BACKGROUND: Buscar avatares de forma assíncrona
+    uniqueLeads.slice(0, 20).forEach(async (lead) => {
       try {
         const profileRes = await fetch(`${EVOLUTION_URL}/chat/fetchProfilePictureUrl/${lead.instanceSource}`, {
           method: 'POST',
@@ -248,18 +226,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       })).reverse();
       
       setChatMessages(mapped);
-
-      if (!lead.avatar) {
-        const profileRes = await fetch(`${EVOLUTION_URL}/chat/fetchProfilePictureUrl/${(lead as any).instanceSource}`, {
-          method: 'POST',
-          headers: HEADERS,
-          body: JSON.stringify({ number: lead.contactPhone })
-        });
-        const profileData = await profileRes.json();
-        if (profileData.profilePictureUrl) {
-          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, avatar: profileData.profilePictureUrl } : l));
-        }
-      }
     } catch (e) {}
   };
 
@@ -427,7 +393,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 {leads.map(lead => (
                   <button 
                     key={lead.id} onClick={() => setSelectedLeadId(lead.id)}
-                    // Fix: Change 'l.id' to 'lead.id' because 'l' is undefined in this context.
                     className={`w-full flex items-center gap-4 p-5 rounded-[2.5rem] transition-all text-left border relative group ${selectedLeadId === lead.id ? 'bg-orange-600/10 border-orange-500/20 shadow-xl' : 'hover:bg-white/[0.02] border-transparent'}`}
                   >
                     <div className="w-12 h-12 rounded-2xl bg-orange-600/10 flex items-center justify-center text-orange-500 font-black italic text-xl border border-orange-500/10 group-hover:scale-110 transition-transform overflow-hidden shadow-inner">
