@@ -25,7 +25,7 @@ const HEADERS = { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json
 
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('integracoes');
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -74,7 +74,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const handleCreate = async () => {
     const sanitizedName = newInstanceName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
-    if (!sanitizedName) { alert("Nome inválido"); return; }
+    if (!sanitizedName) return;
     setIsCreating(true);
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
@@ -87,33 +87,27 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           qrcode: true 
         })
       });
-      const data = await res.json();
       if (res.ok || res.status === 201) {
         setNewInstanceName('');
         await fetchInstances();
         setTimeout(() => openQR(sanitizedName), 800);
-      } else if (data.status === 409) {
-        openQR(sanitizedName);
       } else {
-        alert("Erro: " + (data.message || "Tente novamente"));
+        const data = await res.json();
+        if (data.status === 409) openQR(sanitizedName);
       }
-    } catch (e) { console.error(e); } finally { setIsCreating(false); }
+    } catch (e) {} finally { setIsCreating(false); }
   };
 
   const openQR = async (name: string) => {
-    setQrModal({ isOpen: true, code: '', name, status: 'Gerando QR Code...', connected: false });
+    setQrModal({ isOpen: true, code: '', name, status: 'Gerando Engine...', connected: false });
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { headers: HEADERS });
       const data = await res.json();
       if (data.base64) {
         setQrModal(p => ({ ...p, code: data.base64, status: 'Escanear agora!' }));
         pollConnection(name);
-      } else if (data.message?.includes('already connected')) {
-        setQrModal(p => ({ ...p, status: 'Conectado!', connected: true }));
-        fetchInstances();
-        setTimeout(() => setQrModal(p => ({ ...p, isOpen: false })), 2000);
       }
-    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro na conexão' })); }
+    } catch (e) {}
   };
 
   const pollConnection = (name: string) => {
@@ -133,43 +127,44 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   };
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Deseja destruir ${name}?`)) return;
-    try {
-      await fetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: HEADERS });
-      fetchInstances();
-    } catch (e) { console.error(e); }
+    if (!confirm(`Destruir ${name}?`)) return;
+    await fetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: HEADERS });
+    fetchInstances();
   };
 
-  // --- CRM & ATENDIMENTO (AQUI ESTÁ A CHAVE) ---
+  // --- CRM & ATENDIMENTO (SINCROIZAÇÃO ROBUSTA) ---
   const syncChats = async () => {
     const connectedOnes = instances.filter(i => i.status === 'CONNECTED');
-    if (connectedOnes.length === 0) {
-      console.warn("Nenhuma instância conectada para sincronizar chats.");
-      return;
-    }
+    if (connectedOnes.length === 0) return;
     
     setIsSyncing(true);
     let allLeads: Ticket[] = [];
     
     for (const inst of connectedOnes) {
       try {
-        // Endpoint fetchChats da Evolution API v2
-        const res = await fetch(`${EVOLUTION_URL}/chat/fetchChats/${inst.name}`, { headers: HEADERS });
-        const data = await res.json();
+        // Tenta buscar Chats primeiro (Conversas Ativas)
+        const resChats = await fetch(`${EVOLUTION_URL}/chat/fetchChats/${inst.name}`, { headers: HEADERS });
+        const dataChats = await resChats.json();
+        const rawChats = Array.isArray(dataChats) ? dataChats : (dataChats?.data || dataChats?.chats || []);
         
-        // A Evolution v2 as vezes retorna data.data ou apenas o array
-        const chats = Array.isArray(data) ? data : (data?.data || data?.chats || []);
-        
-        for (const c of chats) {
-          const jid = c.id || c.remoteJid;
-          if (!jid || jid.includes('@g.us')) continue; // Pula grupos
+        // Se chats vierem vazios, tenta buscar Contatos (Lista Telefônica)
+        let sourceArray = rawChats;
+        if (sourceArray.length === 0) {
+          const resContacts = await fetch(`${EVOLUTION_URL}/chat/fetchContacts/${inst.name}`, { headers: HEADERS });
+          const dataContacts = await resContacts.json();
+          sourceArray = Array.isArray(dataContacts) ? dataContacts : (dataContacts?.data || dataContacts?.contacts || []);
+        }
+
+        for (const c of sourceArray) {
+          const jid = c.id || c.remoteJid || c.jid;
+          if (!jid || jid.includes('@g.us')) continue;
           
           allLeads.push({
             id: jid,
-            contactName: c.name || jid.split('@')[0],
+            contactName: c.name || c.pushname || c.verifiedName || jid.split('@')[0],
             contactPhone: jid.split('@')[0],
             avatar: "", 
-            lastMessage: c.lastMessage?.message?.conversation || "Interação WayIA",
+            lastMessage: c.lastMessage?.message?.conversation || "Conversa iniciada",
             time: new Date((c.lastMessage?.messageTimestamp || Date.now()/1000) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'novo',
             unreadCount: c.unreadCount || 0,
@@ -181,17 +176,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           } as Ticket);
         }
       } catch (e) {
-        console.error(`Erro ao sincronizar chats da instância ${inst.name}:`, e);
+        console.error("Erro sync:", e);
       }
     }
     
-    // Remove duplicatas se o mesmo contato estiver em duas instâncias (raro)
+    // Unificar e remover duplicatas pelo ID
     const uniqueLeads = Array.from(new Map(allLeads.map(item => [item.id, item])).values());
     setLeads(uniqueLeads);
     setIsSyncing(false);
 
-    // BACKGROUND: Buscar avatares de forma assíncrona
-    uniqueLeads.slice(0, 20).forEach(async (lead) => {
+    // Background: Buscar avatares para os 15 primeiros
+    uniqueLeads.slice(0, 15).forEach(async (lead) => {
       try {
         const profileRes = await fetch(`${EVOLUTION_URL}/chat/fetchProfilePictureUrl/${lead.instanceSource}`, {
           method: 'POST',
@@ -218,7 +213,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       const mapped: Message[] = raw.map((m: any) => ({
         id: m.key.id,
-        text: m.message?.conversation || m.message?.extendedTextMessage?.text || "📎 Conteúdo de Mídia",
+        text: m.message?.conversation || m.message?.extendedTextMessage?.text || "📎 Mídia recebida",
         sender: m.key.fromMe ? 'me' : 'contact',
         time: new Date((m.messageTimestamp || Date.now()/1000) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         status: 'read',
@@ -258,13 +253,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   useEffect(() => {
     fetchInstances();
-    const interval = setInterval(fetchInstances, 20000);
+    const interval = setInterval(fetchInstances, 30000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     if (activeTab === 'atendimento') syncChats();
-  }, [activeTab, instances.filter(i => i.status === 'CONNECTED').length]);
+  }, [activeTab]);
 
   const currentLead = useMemo(() => leads.find(l => l.id === selectedLeadId), [selectedLeadId, leads]);
   useEffect(() => { if (currentLead) loadHistory(currentLead); }, [currentLead]);
@@ -363,11 +358,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 <GlassCard className="!p-10 !rounded-[3rem] bg-orange-600/[0.02] border-orange-500/10">
                   <ShieldCheck size={48} className="text-orange-500 mb-6" />
                   <h4 className="text-2xl font-black uppercase italic mb-4">Sincronização Ativa</h4>
-                  <p className="text-[11px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed italic">A Evolution API opera múltiplos chips sem delay. Use a lixeira para destruir clusters obsoletos.</p>
+                  <p className="text-[11px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed italic">A Evolution API opera múltiplos chips sem delay.</p>
                 </GlassCard>
                 <div className="grid grid-cols-2 gap-8">
                   <GlassCard className="!p-8 !rounded-[2.5rem] text-center border-white/5 bg-black/40"><div className="text-5xl font-black text-orange-500 mb-1 leading-none">{instances.filter(i => i.status === 'CONNECTED').length}</div><div className="text-[8px] font-black uppercase tracking-widest text-gray-700">Chips Online</div></GlassCard>
-                  <GlassCard className="!p-8 !rounded-[2.5rem] text-center border-white/5 bg-black/40"><div className="text-5xl font-black text-white mb-1 leading-none">{leads.length}</div><div className="text-[8px] font-black uppercase tracking-widest text-gray-700">Leads Handshake</div></GlassCard>
+                  <GlassCard className="!p-8 !rounded-[2.5rem] text-center border-white/5 bg-black/40"><div className="text-5xl font-black text-white mb-1 leading-none">{leads.length}</div><div className="text-[8px] font-black uppercase tracking-widest text-gray-700">Leads Sincronizados</div></GlassCard>
                 </div>
               </div>
             </div>
@@ -385,38 +380,50 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <div className="p-6">
                 <div className="relative group">
                   <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-700 group-focus-within:text-orange-500 transition-colors" />
-                  <input placeholder="BUSCAR LEAD..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-5 pl-12 pr-4 text-[9px] font-black uppercase outline-none focus:border-orange-500/30 transition-all placeholder:text-gray-800" />
+                  <input placeholder="BUSCAR LEAD OU NÚMERO..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-5 pl-12 pr-4 text-[9px] font-black uppercase outline-none focus:border-orange-500/30 transition-all placeholder:text-gray-800" />
                 </div>
               </div>
               
               <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
-                {leads.map(lead => (
-                  <button 
-                    key={lead.id} onClick={() => setSelectedLeadId(lead.id)}
-                    className={`w-full flex items-center gap-4 p-5 rounded-[2.5rem] transition-all text-left border relative group ${selectedLeadId === lead.id ? 'bg-orange-600/10 border-orange-500/20 shadow-xl' : 'hover:bg-white/[0.02] border-transparent'}`}
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-orange-600/10 flex items-center justify-center text-orange-500 font-black italic text-xl border border-orange-500/10 group-hover:scale-110 transition-transform overflow-hidden shadow-inner">
-                      {lead.avatar ? (
-                        <img 
-                          src={lead.avatar} 
-                          className="w-full h-full object-cover" 
-                          alt="" 
-                          onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = `<span>${lead.contactName[0].toUpperCase()}</span>`; }}
-                        />
-                      ) : (
-                        <span>{lead.contactName[0].toUpperCase()}</span>
-                      )}
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[10px] font-black uppercase truncate italic text-white/90">{lead.contactName}</span>
-                        <span className="text-[7px] font-black text-gray-800 uppercase">{lead.time}</span>
+                {isSyncing ? (
+                  <div className="flex flex-col items-center justify-center h-40 opacity-40 gap-3">
+                    <Loader2 className="animate-spin text-orange-500" size={30} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Escaneando Nuvem...</span>
+                  </div>
+                ) : leads.length > 0 ? (
+                  leads.map(lead => (
+                    <button 
+                      key={lead.id} onClick={() => setSelectedLeadId(lead.id)}
+                      className={`w-full flex items-center gap-4 p-5 rounded-[2.5rem] transition-all text-left border relative group ${selectedLeadId === lead.id ? 'bg-orange-600/10 border-orange-500/20 shadow-xl' : 'hover:bg-white/[0.02] border-transparent'}`}
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-orange-600/10 flex items-center justify-center text-orange-500 font-black italic text-xl border border-orange-500/10 group-hover:scale-110 transition-transform overflow-hidden shadow-inner">
+                        {lead.avatar ? (
+                          <img 
+                            src={lead.avatar} 
+                            className="w-full h-full object-cover" 
+                            alt="" 
+                            onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = `<span>${lead.contactName[0].toUpperCase()}</span>`; }}
+                          />
+                        ) : (
+                          <span>{lead.contactName[0].toUpperCase()}</span>
+                        )}
                       </div>
-                      <p className="text-[9px] text-gray-600 truncate italic leading-none">{lead.lastMessage}</p>
-                    </div>
-                    {lead.unreadCount > 0 && <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_10px_#ff7300]" />}
-                  </button>
-                ))}
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-black uppercase truncate italic text-white/90">{lead.contactName}</span>
+                          <span className="text-[7px] font-black text-gray-800 uppercase">{lead.time}</span>
+                        </div>
+                        <p className="text-[9px] text-gray-600 truncate italic leading-none">{lead.lastMessage}</p>
+                      </div>
+                      {lead.unreadCount > 0 && <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_10px_#ff7300]" />}
+                    </button>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-40 opacity-20 text-center px-10">
+                    <Activity size={30} className="mb-4 text-orange-500" />
+                    <span className="text-[8px] font-black uppercase tracking-widest leading-relaxed">Nenhum lead detectado. Clique no ícone de girar acima para forçar sincronização.</span>
+                  </div>
+                )}
               </div>
             </div>
 
