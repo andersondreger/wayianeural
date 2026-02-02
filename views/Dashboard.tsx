@@ -72,7 +72,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   };
 
-  // --- SINCRONIZAÇÃO DE CHATS (ARQUITETURA V2 RESILIENTE) ---
+  // --- SINCRONIZAÇÃO DE CHATS ---
   const syncChats = async () => {
     setIsSyncing(true);
     setSyncError(null);
@@ -89,9 +89,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       }
 
       for (const inst of connectedOnes) {
-        // Tentativa 1: findChats via POST (Padrão V2)
-        // Tentativa 2: fetchChats via GET (Compatibilidade)
-        // Tentativa 3: fetchContacts via GET (Fallback extremo)
         const scanPlans = [
           { ep: `/chat/findChats/${inst.name}`, method: 'POST', body: {} },
           { ep: `/chat/fetchChats/${inst.name}`, method: 'GET' },
@@ -110,9 +107,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             if (!res.ok) continue;
 
             const data = await res.json();
-            // Normalização gananciosa de dados
-            const items = Array.isArray(data) ? data : 
-                          (data.data || data.chats || data.records || data.all || []);
+            const items = Array.isArray(data) ? data : (data.data || data.chats || data.records || data.all || []);
 
             if (items.length > 0) {
               items.forEach((item: any) => {
@@ -141,23 +136,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                   });
                 }
               });
-              // Se já populou com um endpoint, não precisa tentar os fallbacks para esta instância
               break;
             }
-          } catch (err) {
-            console.warn(`Falha no plano ${plan.ep}:`, err);
-          }
+          } catch (err) {}
         }
       }
       
       const finalLeads = Array.from(allLeadsMap.values());
       setLeads(finalLeads);
-      
-      if (finalLeads.length === 0) {
-        setSyncError("A API respondeu com sucesso, mas a lista de chats veio vazia.");
-      }
+      if (finalLeads.length === 0) setSyncError("Sincronizado, mas a lista retornou vazia.");
     } catch (e) {
-      setSyncError("Falha crítica de conexão com o banco de dados da Evolution.");
+      setSyncError("Falha de conexão com o cluster.");
     } finally {
       setIsSyncing(false);
     }
@@ -187,20 +176,29 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     } catch (e) {}
   };
 
-  // --- ENVIAR MENSAGEM ---
+  // --- ENVIAR MENSAGEM (CORREÇÃO V2) ---
   const handleSend = async () => {
     const lead = leads.find(l => l.id === selectedLeadId);
     if (!lead || !messageInput) return;
     setIsSending(true);
+    
     try {
-      const res = await fetch(`${EVOLUTION_URL}/messages/sendText/${(lead as any).instanceSource}`, {
+      // Endpoint V2 Correto: /message/sendText/{instance}
+      // Payload V2 Correto: { number: "JID", text: "mensagem" }
+      const res = await fetch(`${EVOLUTION_URL}/message/sendText/${lead.instanceSource}`, {
         method: 'POST',
         headers: HEADERS,
-        body: JSON.stringify({ number: lead.contactPhone, textMessage: { text: messageInput } })
+        body: JSON.stringify({ 
+          number: lead.id, // Usar o JID completo (ID) é o padrão mais estável
+          text: messageInput 
+        })
       });
+
+      const resData = await res.json();
+
       if (res.ok) {
         setChatMessages(prev => [...prev, {
-          id: Date.now().toString(),
+          id: resData.key?.id || Date.now().toString(),
           text: messageInput,
           sender: 'me' as 'me',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -208,8 +206,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           type: 'text' as 'text'
         }]);
         setMessageInput('');
+        
+        // Atualiza o preview na lista lateral
+        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, lastMessage: messageInput, time: 'Agora' } : l));
+      } else {
+        console.error("Erro no envio Evolution:", resData);
+        alert(`Erro ao enviar: ${resData.message || 'Verifique a conexão do chip.'}`);
       }
-    } catch (e) {} finally { setIsSending(false); }
+    } catch (e) {
+      console.error("Erro de rede no envio:", e);
+      alert("Falha crítica de conexão ao tentar enviar.");
+    } finally {
+      setIsSending(false);
+    }
   };
 
   useEffect(() => {
