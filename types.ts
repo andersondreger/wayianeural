@@ -51,16 +51,18 @@ export interface Ticket {
   avatar?: string;
   sentiment: Sentiment;
   time: string;
-  status: 'novo' | 'em_atendimento' | 'aguardando' | 'finalizado';
+  status: 'novo' | 'em_atendimento' | 'aguardando' | 'finalizado' | 'ganho' | 'perdido';
   unreadCount: number;
   assignedTo: string;
   protocol: string;
   messages: Message[];
-  instanceSource: string; // Nova propriedade para saber de qual chip veio o lead
+  instanceSource: string;
+  value?: number;
+  tags?: string[];
 }
 
 export interface KanbanColumn {
   id: Ticket['status'];
   title: string;
-  tickets: Ticket[];
+  color: string;
 }
