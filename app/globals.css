@@ -5,93 +5,66 @@
 
 :root {
   --neon-orange: #ff7300;
-  --bg-black: #020202;
+  --bg-deep: #0f0f10;
+  --bg-card: #18181b;
+  --border-subtle: #27272a;
 }
 
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
-  background-color: var(--bg-black);
-  color: white;
+  background-color: var(--bg-deep);
+  color: #e4e4e7;
   margin: 0;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Efeito de Orbe de Fundo */
-.neural-orb {
-  position: fixed;
-  width: 500px;
-  height: 500px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 115, 0, 0.08) 0%, transparent 70%);
-  filter: blur(80px);
-  pointer-events: none;
-  z-index: 0;
+.kanban-column {
+  background-color: #121214;
+  border-radius: 12px;
+  min-width: 320px;
 }
 
-.grid-engine {
-  background-image: linear-gradient(rgba(255, 115, 0, 0.03) 1px, transparent 1px), 
-                    linear-gradient(90deg, rgba(255, 115, 0, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
+.kanban-card {
+  background-color: #1c1c1f;
+  border: 1px solid #29292e;
+  transition: transform 0.2s, border-color 0.2s;
 }
 
-.bg-rajado {
-  background: linear-gradient(
-      45deg, 
-      #ea580c 25%, #f97316 25%, #f97316 50%, 
-      #ea580c 50%, #ea580c 75%, #f97316 75%, #f97316 100%
-  );
-  background-size: 40px 40px;
-  animation: move-stripes 3s linear infinite;
+.kanban-card:hover {
+  border-color: #3f3f46;
 }
 
-@keyframes move-stripes {
-  0% { background-position: 0 0; }
-  100% { background-position: 40px 0; }
+.sidebar-item-active {
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 2px solid #6366f1;
 }
 
-.neon-pulse {
-  animation: neon-pulse-anim 3s infinite ease-in-out;
+.chat-bubble-me {
+  background-color: #6366f1;
+  color: white;
 }
 
-@keyframes neon-pulse-anim {
-  0%, 100% { text-shadow: 0 0 15px rgba(255, 115, 0, 0.2); color: #fb923c; }
-  50% { text-shadow: 0 0 40px rgba(255, 115, 0, 0.6); color: #ff7300; }
+.chat-bubble-contact {
+  background-color: #27272a;
+  color: #e4e4e7;
 }
 
-.glass {
-  background: rgba(10, 10, 10, 0.6);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.pill-nav {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 9999px;
-  padding: 4px;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-.custom-scrollbar::-webkit-scrollbar { width: 3px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ff7300; }
-
-@keyframes marquee-ltr {
-  0% { transform: translateX(-50%); }
-  100% { transform: translateX(0%); }
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 10px;
 }
 
-.animate-marquee {
-  display: flex;
-  width: max-content;
-  animation: marquee-ltr 30s linear infinite;
-}
-
-[data-rbd-droppable-id] {
-  min-height: 200px;
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
