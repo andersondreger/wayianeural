@@ -5,7 +5,7 @@
 
 :root {
   --neon-orange: #ff7300;
-  --bg-black: #050505;
+  --bg-black: #020202;
 }
 
 body {
@@ -17,10 +17,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Efeito de Orbe de Fundo */
+.neural-orb {
+  position: fixed;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 115, 0, 0.08) 0%, transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .grid-engine {
-  background-image: linear-gradient(rgba(255, 115, 0, 0.05) 1px, transparent 1px), 
-                    linear-gradient(90deg, rgba(255, 115, 0, 0.05) 1px, transparent 1px);
-  background-size: 50px 50px;
+  background-image: linear-gradient(rgba(255, 115, 0, 0.03) 1px, transparent 1px), 
+                    linear-gradient(90deg, rgba(255, 115, 0, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .bg-rajado {
@@ -48,17 +60,25 @@ body {
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.015);
-  backdrop-filter: blur(28px);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(10, 10, 10, 0.6);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+}
+
+.pill-nav {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 9999px;
+  padding: 4px;
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar { width: 3px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 10px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ff7300; }
 
 @keyframes marquee-ltr {

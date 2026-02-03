@@ -30,6 +30,8 @@ export interface EvolutionInstance {
   status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
   phone?: string;
   instanceKey?: string;
+  ownerName?: string;
+  profilePicUrl?: string;
 }
 
 export type Sentiment = 'happy' | 'neutral' | 'angry';
@@ -56,9 +58,11 @@ export interface Ticket {
   assignedTo: string;
   protocol: string;
   messages: Message[];
-  instanceSource: string;
+  instanceSource: string; // Nome da instância Evolution que gerou o lead
   value?: number;
   tags?: string[];
+  notes?: string;
+  lastActivity?: number;
 }
 
 export interface KanbanColumn {
