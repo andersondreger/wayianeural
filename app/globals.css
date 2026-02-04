@@ -3,68 +3,88 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --neon-orange: #ff7300;
-  --bg-deep: #0f0f10;
-  --bg-card: #18181b;
-  --border-subtle: #27272a;
+@layer base {
+  :root {
+    --neon-orange: #ff7300;
+    --bg-deep: #050505;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: var(--bg-deep);
+    color: #ffffff;
+    margin: 0;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
-body {
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  background-color: var(--bg-deep);
-  color: #e4e4e7;
-  margin: 0;
-  overflow-x: hidden;
-  -webkit-font-smoothing: antialiased;
+@layer utilities {
+  .grid-engine {
+    background-image: linear-gradient(rgba(255, 115, 0, 0.05) 1px, transparent 1px), 
+                      linear-gradient(90deg, rgba(255, 115, 0, 0.05) 1px, transparent 1px);
+    background-size: 50px 50px;
+  }
+
+  .bg-rajado {
+    background: linear-gradient(
+        45deg, 
+        #ea580c 25%, #f97316 25%, #f97316 50%, 
+        #ea580c 50%, #ea580c 75%, #f97316 75%, #f97316 100%
+    );
+    background-size: 40px 40px;
+    animation: move-stripes 3s linear infinite;
+  }
+
+  @keyframes move-stripes {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 0; }
+  }
+
+  .neon-pulse {
+    animation: neon-pulse-anim 3s infinite ease-in-out;
+  }
+
+  @keyframes neon-pulse-anim {
+    0%, 100% { text-shadow: 0 0 15px rgba(255, 115, 0, 0.2); color: #fb923c; }
+    50% { text-shadow: 0 0 40px rgba(255, 115, 0, 0.6); color: #ff7300; }
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.015);
+    backdrop-filter: blur(28px);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ff7300; }
+
+  .animate-marquee {
+    display: flex;
+    width: max-content;
+    animation: marquee 30s linear infinite;
+  }
+
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-33.33%); }
+  }
 }
 
 .kanban-column {
-  background-color: #121214;
+  background-color: #0a0a0a;
   border-radius: 12px;
   min-width: 320px;
 }
 
 .kanban-card {
-  background-color: #1c1c1f;
-  border: 1px solid #29292e;
+  background-color: #121212;
+  border: 1px solid #1f1f1f;
   transition: transform 0.2s, border-color 0.2s;
 }
 
 .kanban-card:hover {
-  border-color: #3f3f46;
-}
-
-.sidebar-item-active {
-  background: rgba(255, 255, 255, 0.05);
-  border-left: 2px solid #6366f1;
-}
-
-.chat-bubble-me {
-  background-color: #6366f1;
-  color: white;
-}
-
-.chat-bubble-contact {
-  background-color: #27272a;
-  color: #e4e4e7;
-}
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  border-color: #ff730033;
 }

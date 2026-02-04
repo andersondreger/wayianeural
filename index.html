@@ -1,6 +1,6 @@
 
 <!DOCTYPE html>
-<html lang="pt-BR" style="scroll-behavior: smooth;">
+<html lang="pt-BR" class="scroll-smooth">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,6 +16,7 @@
                     },
                     colors: {
                         orange: {
+                            400: '#fb923c',
                             500: '#ff7300',
                             600: '#ea580c',
                         },
@@ -49,42 +50,55 @@
                 0% { background-position: 0 0; }
                 100% { background-position: 40px 0; }
             }
+            .neon-glow {
+                text-shadow: 0 0 20px rgba(255, 115, 0, 0.5), 0 0 40px rgba(255, 115, 0, 0.3);
+            }
             .neon-pulse {
                 animation: neon-pulse-anim 3s infinite ease-in-out;
             }
             @keyframes neon-pulse-anim {
-                0%, 100% { text-shadow: 0 0 15px rgba(255, 115, 0, 0.2); color: #fb923c; }
-                50% { text-shadow: 0 0 40px rgba(255, 115, 0, 0.6); color: #ff7300; }
+                0%, 100% { text-shadow: 0 0 15px rgba(255, 115, 0, 0.3); color: #ff7300; }
+                50% { text-shadow: 0 0 45px rgba(255, 115, 0, 0.8); color: #ff8c00; }
             }
             .glass {
-                background: rgba(255, 255, 255, 0.015);
-                backdrop-filter: blur(28px);
-                border: 1px solid rgba(255, 255, 255, 0.04);
+                background: rgba(255, 255, 255, 0.01);
+                backdrop-filter: blur(24px);
+                border: 1px solid rgba(255, 255, 255, 0.05);
             }
             .custom-scrollbar::-webkit-scrollbar { width: 4px; }
             .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
             .custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }
             .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ff7300; }
+            
+            .animate-marquee {
+                display: flex;
+                width: max-content;
+                animation: marquee 40s linear infinite;
+            }
+            @keyframes marquee {
+                0% { transform: translateX(0); }
+                100% { transform: translateX(-33.33%); }
+            }
         }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.3.1",
-    "react-dom": "https://esm.sh/react-dom@18.3.1",
-    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-    "react/": "https://esm.sh/react@18.3.1/",
-    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
-    "lucide-react": "https://esm.sh/lucide-react@0.471.0?deps=react@18.3.1",
-    "framer-motion": "https://esm.sh/framer-motion@11.15.0?deps=react@18.3.1",
-    "@hello-pangea/dnd": "https://esm.sh/@hello-pangea/dnd@16.6.0?deps=react@18.3.1",
-    "next": "https://esm.sh/next@^16.1.4",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.91.1"
-  }
-}
-</script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react-dom": "https://esm.sh/react-dom@18.3.1",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+        "react/": "https://esm.sh/react@18.3.1/",
+        "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+        "lucide-react": "https://esm.sh/lucide-react@0.471.0?deps=react@18.3.1",
+        "framer-motion": "https://esm.sh/framer-motion@11.15.0?deps=react@18.3.1",
+        "@hello-pangea/dnd": "https://esm.sh/@hello-pangea/dnd@16.6.0?deps=react@18.3.1",
+        "next": "https://esm.sh/next@14.2.3",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.43.0"
+      }
+    }
+    </script>
 </head>
-<body class="bg-black-900 text-white">
+<body class="bg-[#050505] text-white overflow-x-hidden antialiased">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
 </body>
