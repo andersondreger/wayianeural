@@ -64,7 +64,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           id: instData.instanceName || instData.id,
           name: instData.instanceName,
           status: (instData.status === 'open' || instData.connectionStatus === 'open') ? 'CONNECTED' : 'DISCONNECTED',
-          phone: instData.ownerJid ? instData.ownerJid.split('@')[0] : 'Aguardando Ativação',
+          phone: instData.ownerJid ? instData.ownerJid.split('@')[0] : 'Motor em Standby',
           profilePicUrl: instData.profilePicUrl || ""
         };
       });
@@ -84,7 +84,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     const sanitizedName = newInstanceName.trim().toLowerCase().replace(/\s+/g, '-');
     
     try {
-      // 1. Criar a instância
+      // 1. Inicia o modal imediatamente para feedback tátil
+      setQrModal({ 
+        isOpen: true, 
+        code: '', 
+        name: sanitizedName, 
+        status: 'Injetando no Cluster...', 
+        connected: false 
+      });
+
       const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST', 
         headers: HEADERS, 
@@ -97,50 +105,56 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok) {
         setNewInstanceName('');
-        // 2. Abrir o modal IMEDIATAMENTE com estado de carregamento
-        setQrModal({ 
-          isOpen: true, 
-          code: '', 
-          name: sanitizedName, 
-          status: 'Sincronizando Cluster...', 
-          connected: false 
-        });
+        // 2. Aguarda um curto período de "aquecimento" do motor
+        setQrModal(p => ({ ...p, status: 'Aquecendo Motor Neural...' }));
         
-        // 3. Aguardar 1.5s para o motor aquecer e pedir o QR
-        setTimeout(() => connectInstance(sanitizedName), 1500);
+        // 3. Tenta conectar com pooling (Causa raiz: delay de inicialização)
+        let attempts = 0;
+        const tryConnect = async () => {
+          const connected = await connectInstance(sanitizedName, true);
+          if (!connected && attempts < 5) {
+            attempts++;
+            setTimeout(tryConnect, 2000);
+          }
+        };
+        setTimeout(tryConnect, 1500);
         await fetchInstances();
       } else {
         const err = await res.json();
+        setQrModal(p => ({ ...p, isOpen: false }));
         alert(`Erro Evolution: ${err.message || 'Falha ao injetar motor'}`);
       }
     } catch (e) { 
-      console.error('Create Error:', e);
-      alert("Falha crítica de comunicação com o servidor.");
+      setQrModal(p => ({ ...p, isOpen: false }));
+      alert("Falha crítica na rede neural.");
     } finally { 
       setIsCreatingInstance(false); 
     }
   };
 
-  const connectInstance = async (name: string) => {
-    // Abrir ou atualizar modal para esta instância
-    setQrModal(prev => ({ ...prev, isOpen: true, name, status: 'Gerando Handshake QR...', code: '' }));
+  const connectInstance = async (name: string, isSilent: boolean = false) => {
+    if (!isSilent) {
+      setQrModal({ isOpen: true, name, status: 'Gerando Handshake QR...', code: '', connected: false });
+    }
     
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { headers: HEADERS });
       const data = await res.json();
       
-      // Mapear QR Code de diferentes formatos da Evolution
       const qrCode = data.base64 || (data.qrcode && data.qrcode.base64) || data.code;
       
       if (qrCode) {
-        setQrModal(p => ({ ...p, code: qrCode, status: 'Pronto para Conexão' }));
-      } else {
-        setQrModal(p => ({ ...p, status: 'Motor já conectado ou ocupado.' }));
+        setQrModal(p => ({ ...p, code: qrCode, status: 'Escaneie para Conectar' }));
+        return true;
+      } else if (data.status === 'open' || data.connectionStatus === 'open') {
+        setQrModal(p => ({ ...p, status: 'Motor já está operacional.', connected: true }));
         fetchInstances();
+        return true;
       }
+      return false;
     } catch (e) { 
-      console.error('Connect Error:', e);
-      setQrModal(p => ({ ...p, status: 'Erro ao obter Handshake. Tente novamente.' }));
+      if (!isSilent) setQrModal(p => ({ ...p, status: 'Erro na conexão neural.' }));
+      return false;
     }
   };
 
@@ -184,7 +198,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               contactName: item.pushName || item.name || item.jid.split('@')[0],
               contactPhone: item.jid.split('@')[0],
               avatar: item.profilePicUrl || "",
-              lastMessage: item.message?.conversation || item.message?.extendedTextMessage?.text || "Atividade detectada",
+              lastMessage: item.message?.conversation || item.message?.extendedTextMessage?.text || "Atividade neural",
               time: "Agora",
               status: 'novo',
               unreadCount: item.unreadCount || 0,
@@ -204,12 +218,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   useEffect(() => {
     fetchInstances();
-    const interval = setInterval(fetchInstances, 25000); 
+    const interval = setInterval(fetchInstances, 30000); 
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => { 
-    if (instances.length > 0) syncChats(); 
+    if (instances.some(i => i.status === 'CONNECTED')) syncChats(); 
   }, [instances.filter(i => i.status === 'CONNECTED').length]);
 
   const handleSend = async () => {
@@ -302,7 +316,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <h2 className="text-xs font-black uppercase tracking-[0.3em] text-white italic">
                 {activeTab === 'atendimento' ? 'Terminal Atendimento' : activeTab === 'kanban' ? 'Fluxo de Escala' : activeTab === 'integracoes' ? 'Neural Connection Cluster' : 'Dashboard Master'}
               </h2>
-              <span className="text-[8px] font-bold text-orange-500 uppercase tracking-widest opacity-60">Sincronização em tempo real</span>
+              <span className="text-[8px] font-bold text-orange-500 uppercase tracking-widest opacity-60 italic">Engines operando em alta frequência</span>
             </div>
           </div>
 
@@ -310,7 +324,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             <button onClick={() => {fetchInstances(); syncChats();}} className={`p-2 glass rounded-xl text-gray-500 hover:text-orange-500 transition-all ${isSyncing ? 'animate-spin text-orange-500' : ''}`}><RefreshCw size={16}/></button>
             <div className="hidden lg:flex items-center gap-3 glass px-4 py-2 rounded-full border-orange-500/10">
                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_green]" />
-               <span className="text-[9px] font-black uppercase tracking-widest text-green-500">{instances.filter(i => i.status === 'CONNECTED').length} Ativos</span>
+               <span className="text-[9px] font-black uppercase tracking-widest text-green-500">{instances.filter(i => i.status === 'CONNECTED').length} Engines On</span>
             </div>
             <div className="h-6 w-px bg-white/5"></div>
             <div className="flex items-center gap-4">
@@ -328,19 +342,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
         <div className="flex-1 overflow-auto p-10">
            
-           {/* VIEW: ENGINES (DNA WAYFLOW) */}
+           {/* VIEW: ENGINES (Destaque para o nome e botão de atualizar) */}
            {activeTab === 'integracoes' && (
              <div className="max-w-6xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className="flex flex-col md:flex-row justify-between items-end gap-6">
                   <div>
                     <h1 className="text-5xl font-black uppercase italic tracking-tighter mb-2">Neural <span className="text-orange-500">Engines.</span></h1>
-                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 italic">Cada Engine é um motor de processamento independente</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 italic">Cada Engine processa centenas de leads por hora</p>
                   </div>
                   <div className="flex gap-4 w-full md:w-auto">
                     <input 
                       value={newInstanceName} 
                       onChange={e => setNewInstanceName(e.target.value)}
-                      placeholder="Nome do Novo Motor..." 
+                      placeholder="Identidade do Motor..." 
                       className="flex-1 md:w-80 bg-white/[0.02] border border-white/5 rounded-2xl py-4 px-6 text-[11px] font-bold uppercase outline-none focus:border-orange-500/40 shadow-inner"
                     />
                     <NeonButton onClick={createInstance} className="!px-10">
@@ -352,7 +366,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                    {instances.map(inst => (
                      <GlassCard key={inst.id} className="!p-8 group hover:border-orange-500/40 transition-all relative overflow-hidden bg-gradient-to-br from-white/[0.02] to-transparent">
-                        <div className="flex flex-col gap-6 relative z-10">
+                        <div className="flex flex-col gap-8 relative z-10">
                            <div className="flex items-center gap-6">
                               <div className="relative">
                                  <div className="w-16 h-16 rounded-2xl bg-black border border-white/5 flex items-center justify-center overflow-hidden shadow-2xl">
@@ -362,24 +376,24 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                               </div>
                               <div className="flex-1 overflow-hidden">
                                  <div className="text-2xl font-black uppercase italic tracking-tighter text-white truncate">{inst.name}</div>
-                                 <div className="text-[9px] font-black text-gray-700 tracking-[0.2em] uppercase mt-1">{inst.phone}</div>
+                                 <div className="text-[9px] font-black text-gray-700 tracking-[0.2em] uppercase mt-1 italic">{inst.phone}</div>
                               </div>
                            </div>
 
-                           <div className="flex gap-3 mt-4">
+                           <div className="flex gap-4">
                               {inst.status === 'DISCONNECTED' ? (
-                                <NeonButton onClick={() => connectInstance(inst.name)} className="flex-1 !py-3 !text-[9px]">Autenticar Handshake</NeonButton>
+                                <NeonButton onClick={() => connectInstance(inst.name)} className="flex-1 !py-3 !text-[9px] shadow-lg">Handshake QR</NeonButton>
                               ) : (
                                 <div className="flex-1 py-3 text-center border border-green-500/20 rounded-xl text-green-500 text-[9px] font-black uppercase tracking-widest bg-green-500/5 flex items-center justify-center gap-2">
-                                  <CheckCircle2 size={12}/> Motor Operacional
+                                  <CheckCircle2 size={12}/> Operacional
                                 </div>
                               )}
                               
-                              {/* BOTÃO DE ATUALIZAÇÃO / RE-CONEXÃO */}
+                              {/* BOTÃO ATUALIZAR CONEXÃO */}
                               <button 
                                 onClick={() => connectInstance(inst.name)} 
-                                title="Re-gerar Handshake QR" 
-                                className="p-4 rounded-2xl bg-white/5 text-gray-500 hover:text-orange-500 transition-all border border-white/5 hover:border-orange-500/20 shadow-lg"
+                                title="Atualizar Handshake" 
+                                className="p-4 rounded-2xl bg-white/[0.03] text-gray-500 hover:text-orange-500 hover:border-orange-500/30 transition-all border border-white/5"
                               >
                                 <Zap size={18}/>
                               </button>
@@ -400,7 +414,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    {instances.length === 0 && (
                      <div className="col-span-full py-20 text-center opacity-30">
                         <Database size={32} className="mx-auto mb-6" />
-                        <p className="text-[10px] font-black uppercase tracking-widest italic">Nenhum motor detectado no cluster</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Nenhum motor neural detectado</p>
                      </div>
                    )}
                 </div>
@@ -414,14 +428,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    <header className="p-8 border-b border-white/5 bg-black/20 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                          <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-                         <span className="text-[11px] font-black uppercase tracking-[0.4em] italic text-orange-500">Threads de Atendimento</span>
+                         <span className="text-[11px] font-black uppercase tracking-[0.4em] italic text-orange-500">Threads Ativas</span>
                       </div>
                       <button onClick={syncChats} className={`p-2 glass rounded-xl text-gray-600 hover:text-orange-500 transition-all ${isSyncing ? 'animate-spin' : ''}`}><RefreshCw size={14}/></button>
                    </header>
                    <div className="p-6">
                       <div className="relative">
                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-800" size={14} />
-                         <input placeholder="Filtrar Threads..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-4 pl-12 pr-6 text-[10px] font-black uppercase outline-none focus:border-orange-500/30 transition-all" />
+                         <input placeholder="Buscar Leads..." className="w-full bg-white/[0.02] border border-white/5 rounded-2xl py-4 pl-12 pr-6 text-[10px] font-black uppercase outline-none focus:border-orange-500/30 transition-all" />
                       </div>
                    </div>
                    <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-4 space-y-2">
@@ -437,17 +451,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                               </div>
                               <p className="text-[9px] text-gray-600 italic truncate leading-relaxed">"{lead.lastMessage}"</p>
                               <div className="mt-2 flex items-center gap-3">
-                                 <div className="px-2 py-0.5 rounded-full bg-orange-500/10 text-[6px] font-black uppercase text-orange-500 tracking-widest border border-orange-500/10">{lead.instanceSource}</div>
+                                 <div className="px-2 py-0.5 rounded-full bg-orange-500/10 text-[6px] font-black uppercase text-orange-500 tracking-widest border border-orange-500/10 italic">{lead.instanceSource}</div>
                               </div>
                            </div>
                         </button>
                       ))}
-                      {leads.length === 0 && (
-                        <div className="py-20 text-center opacity-10">
-                           <MessageSquare size={24} className="mx-auto mb-4" />
-                           <p className="text-[8px] font-black uppercase tracking-widest">Aguardando sinais do cluster...</p>
-                        </div>
-                      )}
                    </div>
                 </div>
 
@@ -503,7 +511,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-20">
                         <Logo size="md" className="grayscale mb-12" />
                         <h4 className="text-3xl font-black uppercase italic tracking-[0.6em] text-white">Cluster Standby</h4>
-                        <p className="text-[11px] font-black text-gray-800 uppercase tracking-widest mt-8 max-w-xs italic">Selecione uma thread para iniciar o processamento.</p>
+                        <p className="text-[11px] font-black text-gray-800 uppercase tracking-widest mt-8 max-w-xs italic">Aguardando thread para iniciar processamento.</p>
                      </div>
                    )}
                 </div>
@@ -515,7 +523,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 <header className="mb-12 flex flex-col md:flex-row justify-between items-end gap-6">
                   <div>
                     <h1 className="text-5xl font-black uppercase italic tracking-tighter mb-2">Neural <span className="text-orange-500">Pipeline.</span></h1>
-                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 italic">Conversão em Escala Industrial</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 italic">Gestão de Leads em Massa</p>
                   </div>
                 </header>
 
@@ -523,7 +531,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                   <div className="flex gap-10 h-full items-start overflow-x-auto custom-scrollbar pb-10">
                     {KANBAN_COLS.map(col => (
                       <div key={col.id} className="flex flex-col w-[400px] shrink-0">
-                        <div className="px-8 py-5 flex items-center justify-between mb-6 glass rounded-3xl border-white/5 bg-gradient-to-r from-white/[0.02] to-transparent">
+                        <div className="px-8 py-5 flex items-center justify-between mb-6 glass rounded-3xl border-white/5">
                            <span className="text-[13px] font-black uppercase tracking-[0.2em] text-white italic">{col.title}</span>
                            <div className="text-[10px] font-black text-orange-500 bg-orange-500/10 px-4 py-1 rounded-full">{leads.filter(l => l.status === col.id).length}</div>
                         </div>
@@ -562,42 +570,53 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
       </main>
 
-      {/* QR MODAL (Ajustado para causar o impacto visual desejado) */}
+      {/* QR MODAL (Redesenhado para máxima fidelidade) */}
       <AnimatePresence>
         {qrModal.isOpen && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-8 bg-black/95 backdrop-blur-3xl">
-            <div className="bg-[#050505] border border-orange-500/20 p-20 rounded-[4rem] text-center max-w-lg w-full relative shadow-[0_0_100px_rgba(255,115,0,0.15)] animate-in zoom-in-95 duration-500">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-8 bg-black/98 backdrop-blur-3xl">
+            <div className="bg-[#050505] border border-orange-500/30 p-16 rounded-[4rem] text-center max-w-lg w-full relative shadow-[0_0_150px_rgba(255,115,0,0.15)] animate-in zoom-in-95 duration-500">
               <button onClick={() => setQrModal(p => ({ ...p, isOpen: false }))} className="absolute top-12 right-12 text-gray-800 hover:text-white p-3 hover:bg-white/5 rounded-full transition-all"><X size={32}/></button>
               
-              <div className="mb-8">
+              <div className="mb-10">
                 <h3 className="text-4xl font-black uppercase italic mb-2 tracking-tighter text-white">Engine: {qrModal.name}</h3>
-                <p className="text-[11px] font-black uppercase text-orange-500 animate-pulse tracking-[0.4em] italic">{qrModal.status}</p>
+                <div className="flex items-center justify-center gap-3">
+                   <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                   <p className="text-[11px] font-black uppercase text-orange-500 tracking-[0.4em] italic">{qrModal.status}</p>
+                </div>
               </div>
 
-              <div className="relative mb-16">
-                 <div className="bg-white p-12 rounded-[3.5rem] flex items-center justify-center min-h-[350px] shadow-[0_0_40px_rgba(255,255,255,0.1)] overflow-hidden">
+              <div className="relative mb-12">
+                 <div className="bg-white p-12 rounded-[3.5rem] flex items-center justify-center min-h-[350px] shadow-inner overflow-hidden border-8 border-white/5">
                     {qrModal.code ? (
                       <motion.img 
-                        initial={{ opacity: 0, scale: 0.8 }} 
+                        initial={{ opacity: 0, scale: 0.9 }} 
                         animate={{ opacity: 1, scale: 1 }} 
                         src={qrModal.code.startsWith('data:') ? qrModal.code : `data:image/png;base64,${qrModal.code}`} 
-                        className="w-full scale-110" 
+                        className="w-full scale-105" 
                         alt="Handshake QR" 
                       />
                     ) : (
-                      <div className="flex flex-col items-center gap-6">
-                        <div className="w-20 h-20 border-t-2 border-orange-500 rounded-full animate-spin" />
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Aguardando Handshake Neural...</span>
+                      <div className="flex flex-col items-center gap-8">
+                        <Loader2 className="animate-spin text-orange-500" size={64} />
+                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest italic animate-pulse">Sincronizando Frequência Neural...</span>
                       </div>
                     )}
                  </div>
-                 <div className="absolute inset-0 border-2 border-orange-500/10 rounded-[3.5rem] pointer-events-none" />
+                 {qrModal.connected && (
+                   <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-[3.5rem] flex flex-col items-center justify-center">
+                      <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mb-6">
+                         <CheckCircle2 size={48} className="text-green-500" />
+                      </div>
+                      <h4 className="text-2xl font-black uppercase italic text-white mb-2">Motor Operacional</h4>
+                      <NeonButton onClick={() => setQrModal(p => ({ ...p, isOpen: false }))} className="!px-8 !py-3">Fechar Terminal</NeonButton>
+                   </div>
+                 )}
               </div>
               
-              <div className="mt-8 pt-12 border-t border-white/5">
-                 <div className="flex items-center justify-center gap-4 text-green-500/50">
-                    <ShieldCheck size={20} />
-                    <span className="text-[10px] font-black uppercase tracking-widest italic">Criptografia de Ponta a Ponta Ativa</span>
+              <div className="pt-8 border-t border-white/5 opacity-40">
+                 <div className="flex items-center justify-center gap-4 text-white">
+                    <ShieldCheck size={18} />
+                    <span className="text-[9px] font-black uppercase tracking-widest italic">Handshake Criptografado TLS 1.3</span>
                  </div>
               </div>
             </div>
