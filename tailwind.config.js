@@ -14,6 +14,12 @@ module.exports = {
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'sans-serif'],
       },
+      colors: {
+        orange: {
+          500: '#ff7300',
+          600: '#ea580c',
+        }
+      }
     },
   },
   plugins: [],
