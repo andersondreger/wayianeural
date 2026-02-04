@@ -64,6 +64,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (chatMessages.length) scrollToBottom();
   }, [chatMessages]);
 
+  // Helper para normalizar o Avatar
+  const getAvatarUrl = (contact: any) => {
+    return contact?.profilePictureUrl || contact?.profilePicUrl || contact?.imgUrl || null;
+  };
+
+  // Helper para normalizar o Nome
+  const getContactName = (contact: any) => {
+    const name = contact?.name || contact?.pushName || contact?.verifiedName || contact?.id?.split('@')[0];
+    return name || 'Desconhecido';
+  };
+
   const fetchInstances = async () => {
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/fetchInstances`, { headers: HEADERS });
@@ -446,34 +457,45 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                </div>
                             </div>
                           )}
-                          {contacts.filter(c => ((c.name || c.id || c.pushName || "").toLowerCase().includes(searchQuery.toLowerCase()))).map((contact, i) => (
-                            <div 
-                               key={i} 
-                               onClick={() => loadChat(contact)}
-                               className={`p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border ${selectedContact?.id === contact.id ? 'bg-orange-500/10 border-orange-500/30 shadow-[0_0_30px_rgba(255,115,0,0.05)]' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
-                            >
-                               <div className="relative">
-                                  <div className="w-12 h-12 rounded-xl bg-black border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-lg group-hover:shadow-orange-500/10">
-                                     {contact.profilePictureUrl || contact.imgUrl ? (
-                                       <img src={contact.profilePictureUrl || contact.imgUrl} className="w-full h-full object-cover scale-110 group-hover:scale-100 transition-transform" />
-                                     ) : (
-                                       <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center text-[14px] font-black italic text-gray-700">
-                                          {(contact.name || contact.pushName || "?")[0].toUpperCase()}
-                                       </div>
-                                     )}
-                                  </div>
-                                  <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#050505] ${i % 3 === 0 ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-gray-800'}`} />
-                               </div>
-                               <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-start mb-0.5">
-                                     <span className="text-[11px] font-black uppercase text-white truncate italic tracking-tight">
-                                       {contact.name || contact.pushName || contact.id?.split('@')[0] || 'Desconhecido'}
-                                     </span>
-                                  </div>
-                                  <p className="text-[9px] font-bold text-gray-600 truncate uppercase tracking-tighter italic">Cluster Sincronizado</p>
-                               </div>
-                            </div>
-                          ))}
+                          {contacts.filter(c => ((getContactName(c)).toLowerCase().includes(searchQuery.toLowerCase()))).map((contact, i) => {
+                            const avatar = getAvatarUrl(contact);
+                            const name = getContactName(contact);
+                            
+                            return (
+                              <div 
+                                 key={i} 
+                                 onClick={() => loadChat(contact)}
+                                 className={`p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border ${selectedContact?.id === contact.id ? 'bg-orange-500/10 border-orange-500/30 shadow-[0_0_30px_rgba(255,115,0,0.05)]' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
+                              >
+                                 <div className="relative shrink-0">
+                                    <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-lg group-hover:shadow-orange-500/10">
+                                       {avatar ? (
+                                         <img 
+                                           src={avatar} 
+                                           referrerPolicy="no-referrer"
+                                           crossOrigin="anonymous"
+                                           className="w-full h-full object-cover" 
+                                           onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = `<div class="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center text-[14px] font-black italic text-gray-700">${name[0].toUpperCase()}</div>`; }}
+                                         />
+                                       ) : (
+                                         <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center text-[14px] font-black italic text-gray-700">
+                                            {name[0].toUpperCase()}
+                                         </div>
+                                       )}
+                                    </div>
+                                    <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#050505] ${i % 3 === 0 ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-gray-800'}`} />
+                                 </div>
+                                 <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-start mb-0.5">
+                                       <span className="text-[11px] font-black uppercase text-white truncate italic tracking-tight">
+                                         {name}
+                                       </span>
+                                    </div>
+                                    <p className="text-[9px] font-bold text-gray-600 truncate uppercase tracking-tighter italic">Cluster Sincronizado</p>
+                                 </div>
+                              </div>
+                            );
+                          })}
                           {contacts.length === 0 && !isFetchingContacts && !contactError && (
                             <div className="py-20 text-center opacity-20 space-y-4">
                                <Users size={32} className="mx-auto" />
@@ -491,19 +513,24 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <>
                         <div className="h-20 border-b border-white/5 bg-black/20 flex items-center justify-between px-8 backdrop-blur-xl z-20">
                            <div className="flex items-center gap-5">
-                              <div className="w-12 h-12 rounded-xl bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-2xl relative">
-                                 {selectedContact.profilePictureUrl || selectedContact.imgUrl ? (
-                                   <img src={selectedContact.profilePictureUrl || selectedContact.imgUrl} className="w-full h-full object-cover" />
+                              <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-2xl relative">
+                                 {getAvatarUrl(selectedContact) ? (
+                                   <img 
+                                     src={getAvatarUrl(selectedContact)} 
+                                     referrerPolicy="no-referrer"
+                                     crossOrigin="anonymous"
+                                     className="w-full h-full object-cover" 
+                                   />
                                  ) : (
                                    <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center text-[16px] font-black italic text-gray-700">
-                                      {(selectedContact.name || selectedContact.pushName || "?")[0].toUpperCase()}
+                                      {getContactName(selectedContact)[0].toUpperCase()}
                                    </div>
                                  )}
-                                 <div className="absolute inset-0 border border-white/10 rounded-xl pointer-events-none" />
+                                 <div className="absolute inset-0 border border-white/10 rounded-full pointer-events-none" />
                               </div>
                               <div>
                                  <h4 className="text-lg font-black uppercase italic tracking-tighter text-white leading-none mb-1">
-                                   {selectedContact.name || selectedContact.pushName || selectedContact.id}
+                                   {getContactName(selectedContact)}
                                  </h4>
                                  <div className="flex items-center gap-2">
                                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
