@@ -23,7 +23,6 @@ interface DashboardProps {
 
 const EVOLUTION_URL = 'https://evo2.wayiaflow.com.br';
 const EVOLUTION_API_KEY = 'd86920ba398e31464c46401214779885';
-const HEADERS = { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' };
 
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('atendimento');
@@ -56,6 +55,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const poolingRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Headers otimizados para v2
+  const getHeaders = (instanceName?: string) => {
+    const base: any = { 
+      'apikey': EVOLUTION_API_KEY, 
+      'Content-Type': 'application/json' 
+    };
+    if (instanceName) {
+      base['instance'] = instanceName; // OBRIGATÓRIO em muitas builds v2
+    }
+    return base;
+  };
+
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -67,26 +78,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const formatPhone = (id: string) => {
     if (!id) return "Desconhecido";
     const number = id.split('@')[0].replace(/\D/g, '');
-    if (number.length >= 11) {
-      return `+${number.slice(0, 2)} (${number.slice(2, 4)}) ${number.slice(4, 9)}-${number.slice(9)}`;
-    }
-    return `+${number}`;
-  };
-
-  const isTechnicalId = (str: string) => {
-    if (!str) return true;
-    const s = str.trim();
-    return s.toUpperCase().startsWith('CML') || (s.length > 15 && !s.includes(' '));
+    return number.length >= 10 ? `+${number}` : number;
   };
 
   const normalizeContact = (c: any) => {
-    const rawId = c.id || c.remoteJid || c.jid || "";
+    const rawId = c.id || c.remoteJid || c.jid || c.key?.remoteJid || "";
     const pushName = c.pushName || c.pushname || c.verifiedName || c.contact?.pushName || "";
     const savedName = c.name || c.contact?.name || "";
     
     let finalName = "";
-    if (pushName && !isTechnicalId(pushName)) finalName = pushName;
-    else if (savedName && !isTechnicalId(savedName)) finalName = savedName;
+    if (pushName && !pushName.includes('@')) finalName = pushName;
+    else if (savedName && !savedName.includes('@')) finalName = savedName;
     else finalName = formatPhone(rawId);
 
     const avatar = c.profilePictureUrl || c.profilePicUrl || c.imgUrl || c.profileUrl || c.contact?.profilePictureUrl || null;
@@ -96,18 +98,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       id: rawId,
       displayName: finalName,
       displayAvatar: (avatar && typeof avatar === 'string' && avatar.length > 10) ? avatar : null,
-      phone: rawId.split('@')[0]
+      phone: rawId.split('@')[0],
+      lastMsg: c.message?.conversation || c.content || "Mensagem de Mídia"
     };
   };
 
   const fetchInstances = async () => {
     try {
-      const res = await fetch(`${EVOLUTION_URL}/instance/fetchInstances`, { headers: HEADERS });
+      const res = await fetch(`${EVOLUTION_URL}/instance/fetchInstances`, { headers: getHeaders() });
       const data = await res.json();
-      const raw = Array.isArray(data) ? data : (data.instances || []);
+      const raw = Array.isArray(data) ? data : (data.instances || data.data || []);
       const mapped: EvolutionInstance[] = raw.map((i: any) => {
         const instData = i.instance || i;
-        // Preservamos o nome original vindo do servidor para evitar erro 404 por case sensitivity
         const name = (instData.instanceName || instData.name || instData.id || "").trim();
         return {
           id: instData.id || instData.instanceId || name,
@@ -131,6 +133,79 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   };
 
+  const fetchContacts = async (instanceName: string) => {
+    if (isFetchingContacts || !instanceName) return;
+    setIsFetchingContacts(true);
+    setContactError(null);
+    
+    console.log(`🔍 Iniciando Scanner de Rotas para: ${instanceName}`);
+
+    // Lista de rotas v2 mais prováveis
+    const probes = [
+      `/chat/findMany`, // Padrão v2 com Header Instance
+      `/contact/findMany`,
+      `/chat/findMany/${instanceName}`,
+      `/contact/findMany/${instanceName}`,
+      `/chat/fetchChats`,
+      `/contact/fetchContacts`
+    ];
+
+    let successData = null;
+
+    for (const path of probes) {
+      try {
+        const res = await fetch(`${EVOLUTION_URL}${path}`, { 
+          headers: getHeaders(instanceName) 
+        });
+        
+        if (res.ok) {
+          const json = await res.json();
+          // Na v2 os dados costumam vir dentro de 'data'
+          const potentialList = json.data || json.chats || json.contacts || json;
+          
+          if (Array.isArray(potentialList) && potentialList.length > 0) {
+            successData = potentialList;
+            console.log(`✅ Conexão Estabelecida via: ${path}`);
+            break;
+          }
+        }
+      } catch (e) { continue; }
+    }
+
+    if (!successData) {
+      // Tenta uma última vez buscando mensagens globais se contatos falharem
+      try {
+        const res = await fetch(`${EVOLUTION_URL}/chat/findMany`, { headers: getHeaders(instanceName) });
+        const json = await res.json();
+        successData = json.data || [];
+      } catch(e) {}
+    }
+
+    if (!successData || successData.length === 0) {
+      setContactError(`O motor '${instanceName}' está vazio ou não respondeu aos sinais de dados.`);
+      setIsFetchingContacts(false);
+      return;
+    }
+
+    try {
+      const normalized = successData
+        .filter((c: any) => {
+          const id = c.id || c.remoteJid || c.jid || "";
+          return id && !id.includes('@g.us'); // Filtra grupos por enquanto para focar em chat direto
+        })
+        .map(normalizeContact);
+
+      // Remove duplicatas por ID
+      const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
+      setContacts(unique);
+      
+    } catch (e: any) {
+      setContactError("Erro de decodificação no cluster.");
+    } finally {
+      setIsFetchingContacts(false);
+    }
+  };
+
   const createInstance = async (name?: string) => {
     const instanceName = name || newInstanceName;
     if (!instanceName.trim()) return;
@@ -149,11 +224,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     });
 
     try {
-      await fetch(`${EVOLUTION_URL}/instance/delete/${sanitizedName}`, { method: 'DELETE', headers: HEADERS }).catch(() => {});
+      await fetch(`${EVOLUTION_URL}/instance/delete/${sanitizedName}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
       
       await fetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST', 
-        headers: HEADERS, 
+        headers: getHeaders(), 
         body: JSON.stringify({ 
           instanceName: sanitizedName, 
           qrcode: true,
@@ -165,7 +240,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       if (poolingRef.current) clearInterval(poolingRef.current);
       poolingRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`${EVOLUTION_URL}/instance/connect/${sanitizedName}`, { headers: HEADERS });
+          const res = await fetch(`${EVOLUTION_URL}/instance/connect/${sanitizedName}`, { headers: getHeaders() });
           const data = await res.json();
           const code = data.base64 || data.qrcode?.base64 || data.code?.base64 || data.qrcode || data.code;
           
@@ -188,68 +263,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   };
 
-  const fetchContacts = async (instanceName: string) => {
-    if (isFetchingContacts || !instanceName) return;
-    setIsFetchingContacts(true);
-    setContactError(null);
-    
-    // Lista de endpoints ATUALIZADA para v2 (findMany é o novo padrão)
-    const endpoints = [
-      `/chat/findMany/${instanceName}`,
-      `/contact/findMany/${instanceName}`,
-      `/chat/fetchChats/${instanceName}`,
-      `/contact/fetchContacts/${instanceName}`,
-      `/chat/findMany?instanceName=${instanceName}`,
-      `/contact/findMany?instanceName=${instanceName}`
-    ];
-
-    let successData = null;
-    let foundPath = "";
-
-    for (const path of endpoints) {
-      try {
-        const res = await fetch(`${EVOLUTION_URL}${path}`, { headers: HEADERS });
-        if (res.ok) {
-          const json = await res.json();
-          // Verifica se o JSON retornado é uma lista ou contém uma lista válida
-          if (json && (Array.isArray(json) || json.chats || json.contacts || json.data || (typeof json === 'object' && Object.keys(json).length > 0))) {
-            successData = json;
-            foundPath = path;
-            console.log(`✅ Handshake V2 confirmado na rota: ${path}`);
-            break;
-          }
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (!successData) {
-      setContactError(`Handshake falhou. O motor '${instanceName}' não está respondendo às rotas de dados.`);
-      setIsFetchingContacts(false);
-      return;
-    }
-
-    try {
-      const list = Array.isArray(successData) ? successData : (successData.chats || successData.contacts || successData.data || []);
-      
-      const normalized = list
-        .filter((c: any) => (c.id || c.remoteJid || c.jid) && !(c.id || c.remoteJid || "").includes('@g.us'))
-        .map(normalizeContact);
-
-      const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
-      setContacts(unique);
-      
-    } catch (e: any) {
-      setContactError("Erro ao indexar pacotes neurais.");
-    } finally {
-      setIsFetchingContacts(false);
-    }
-  };
-
   useEffect(() => {
     fetchInstances();
-    const interval = setInterval(fetchInstances, 45000);
+    const interval = setInterval(fetchInstances, 60000);
     return () => {
       clearInterval(interval);
       if (poolingRef.current) clearInterval(poolingRef.current);
@@ -262,8 +278,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       if (connected) {
         fetchContacts(connected.name);
       } else if (instances.length > 0) {
-        setContacts([]);
-        setContactError("Nenhum motor operacional detectado.");
+        setContactError("Aguardando motor operacional...");
       }
     }
   }, [activeTab, instances]);
@@ -276,33 +291,31 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setIsFetchingMessages(true);
     setChatMessages([]);
 
-    try {
-      // Tenta findMessages (V2) antes de fetchMessages
-      const endpoints = [
-        `/chat/findMessages/${connectedInst.name}`,
-        `/chat/fetchMessages/${connectedInst.name}`
-      ];
+    const msgProbes = [
+      `/chat/findMessages`,
+      `/chat/findMessages/${connectedInst.name}`,
+      `/chat/fetchMessages/${connectedInst.name}`
+    ];
 
-      let data = null;
-      for(const path of endpoints) {
+    let data = null;
+    for(const path of msgProbes) {
+      try {
         const res = await fetch(`${EVOLUTION_URL}${path}`, {
           method: 'POST',
-          headers: HEADERS,
+          headers: getHeaders(connectedInst.name),
           body: JSON.stringify({ remoteJid: contact.id, page: 1 })
         });
         if(res.ok) {
-          data = await res.json();
-          break;
+          const json = await res.json();
+          data = json.data || json.messages || json;
+          if (Array.isArray(data)) break;
         }
-      }
-
-      const msgs = Array.isArray(data) ? data : (data?.messages || data?.data || []);
-      setChatMessages([...msgs].reverse());
-    } catch (e) {
-      console.error("Erro ao carregar mensagens");
-    } finally {
-      setIsFetchingMessages(false);
+      } catch(e) { continue; }
     }
+
+    const msgs = Array.isArray(data) ? data : [];
+    setChatMessages([...msgs].reverse());
+    setIsFetchingMessages(false);
   };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -325,7 +338,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     try {
       await fetch(`${EVOLUTION_URL}/message/sendText/${connectedInst.name}`, {
         method: 'POST',
-        headers: HEADERS,
+        headers: getHeaders(connectedInst.name),
         body: JSON.stringify({
           number: selectedContact.id,
           textMessage: { text }
@@ -337,7 +350,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const restartInstance = async (name: string) => {
     setIsRestarting(true);
     try {
-      await fetch(`${EVOLUTION_URL}/instance/restart/${name}`, { method: 'POST', headers: HEADERS });
+      await fetch(`${EVOLUTION_URL}/instance/restart/${name}`, { method: 'POST', headers: getHeaders() });
       setTimeout(() => {
         fetchContacts(name);
         setIsRestarting(false);
@@ -435,7 +448,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                   <div className="flex-1 py-3 border border-green-500/10 rounded-xl text-green-500 text-[10px] font-black uppercase text-center bg-green-500/5">Operacional</div>
                                 )}
                                 <button onClick={() => { restartInstance(inst.name) }} className={`p-3 rounded-xl bg-white/[0.02] text-gray-600 hover:text-orange-500 border border-white/5 transition-all ${isRestarting ? 'animate-spin opacity-50' : ''}`}><RotateCw size={16}/></button>
-                                <button onClick={() => { if(confirm('Remover motor?')) fetch(`${EVOLUTION_URL}/instance/delete/${inst.name}`, {method:'DELETE', headers:HEADERS}).then(()=>fetchInstances()) }} className="p-3 rounded-xl bg-red-600/5 text-red-500/40 hover:bg-red-600 hover:text-white border border-red-500/10 transition-all"><Trash2 size={16}/></button>
+                                <button onClick={() => { if(confirm('Remover motor?')) fetch(`${EVOLUTION_URL}/instance/delete/${inst.name}`, {method:'DELETE', headers:getHeaders()}).then(()=>fetchInstances()) }} className="p-3 rounded-xl bg-red-600/5 text-red-500/40 hover:bg-red-600 hover:text-white border border-red-500/10 transition-all"><Trash2 size={16}/></button>
                              </div>
                           </div>
                        </GlassCard>
@@ -480,6 +493,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                           {contactError && contacts.length === 0 && (
                             <div className="p-4 mx-3 mb-2 rounded-xl bg-red-500/5 border border-red-500/10 text-center">
                                <p className="text-[8px] font-black uppercase tracking-tighter text-red-500/60 leading-relaxed italic">{contactError}</p>
+                               <button onClick={() => { const conn = instances.find(i=>i.status === 'CONNECTED'); if(conn) fetchContacts(conn.name); }} className="mt-2 text-[8px] text-orange-500 underline uppercase font-black">Tentar Novamente</button>
                             </div>
                           )}
                           {contacts.filter(c => (c.displayName || "").toLowerCase().includes(searchQuery.toLowerCase())).map((contact, i) => (
@@ -516,7 +530,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                   <span className="text-[11px] font-black uppercase text-white truncate italic tracking-tight block">
                                     {contact.displayName}
                                   </span>
-                                  <p className="text-[9px] font-bold text-gray-700 truncate uppercase tracking-tighter italic mt-0.5">Sincronizado</p>
+                                  <p className="text-[9px] font-bold text-gray-700 truncate uppercase tracking-tighter italic mt-0.5 leading-none">
+                                    {contact.lastMsg || 'Sincronizado'}
+                                  </p>
                                </div>
                             </div>
                           ))}
@@ -576,13 +592,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                 <span className="text-[10px] font-black uppercase tracking-widest italic">Recuperando Logs Neurais...</span>
                              </div>
                            ) : (
-                             chatMessages.map((msg, i) => {
-                               const fromMe = msg.key.fromMe;
+                             chatMessages.map((msg: any, i) => {
+                               const fromMe = msg.key?.fromMe;
                                const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.content || "";
                                if (!text) return null;
                                
                                return (
-                                 <motion.div initial={{ opacity: 0, x: fromMe ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={msg.key.id || i} className={`flex ${fromMe ? 'justify-end' : 'justify-start'}`}>
+                                 <motion.div initial={{ opacity: 0, x: fromMe ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={msg.key?.id || i} className={`flex ${fromMe ? 'justify-end' : 'justify-start'}`}>
                                     <div className="max-w-[70%] group">
                                        <div className={`p-5 rounded-[2rem] text-sm font-bold tracking-tight shadow-2xl relative ${fromMe ? 'bg-orange-500 text-white rounded-tr-none' : 'glass text-gray-200 rounded-tl-none border-white/10'}`}>
                                           {text}
