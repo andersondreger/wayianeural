@@ -10,7 +10,7 @@ import {
   Paperclip, MoreVertical, Phone, Video, Users, AlertTriangle,
   RotateCw, ChevronDown, Wifi, WifiOff, ShieldAlert, Eraser, Bomb, Terminal,
   Cpu, ActivitySquare, Binary, DatabaseZap, HardDriveDownload, Wrench,
-  ShieldQuestion, DatabaseBackup
+  ShieldQuestion, DatabaseBackup, Info, Link2, ServerCrash
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -44,6 +44,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [isFetchingMessages, setIsFetchingMessages] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dbStatus, setDbStatus] = useState<'IDLE' | 'CHECKING' | 'FAIL' | 'READY'>('IDLE');
 
   const [qrModal, setQrModal] = useState({ 
     isOpen: false, 
@@ -126,16 +127,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         const wayia = mapped.find(i => i.name.toLowerCase() === 'wayia' && i.status === 'CONNECTED');
         if (wayia) setSelectedInstanceForChat(wayia);
       }
-    } catch (e) { console.error('Cluster em timeout.'); }
+    } catch (e) { console.error('Evolution Cluster Offline.'); }
   };
 
   const forcePostgresInjection = async (instance: EvolutionInstance) => {
     setIsIndexing(true);
     setContactError(null);
-    console.log(`💉 Forçando Injeção Postgres v9.0: ${instance.name}`);
+    setDbStatus('CHECKING');
     
     try {
-      // 1. Re-aplicar Settings (Garante que a Evolution 'lembre' de salvar)
+      // 1. Re-aplicar Settings (Obrigatório para o motor 'ouvir' o Postgres)
       await fetch(`${EVOLUTION_URL}/instance/setSettings/${instance.name}`, {
         method: 'POST',
         headers: getHeaders(instance.name),
@@ -148,18 +149,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         })
       });
 
-      // 2. Comando Direto de Sincronização de Contatos
+      // 2. Trigger de Sincronização Baileys -> Postgres
       await fetch(`${EVOLUTION_URL}/contact/sync/${instance.name}`, {
         method: 'POST',
         headers: getHeaders(instance.name)
       });
 
-      // 3. Aguarda processamento do banco
-      await new Promise(r => setTimeout(r, 6000));
+      // 3. Aguarda 8 segundos (Tempo de gravação de buffer)
+      await new Promise(r => setTimeout(r, 8000));
       await fetchContacts(instance);
 
     } catch (e) {
-      setContactError("Falha na Injeção. Verifique se o Postgres está rodando no Portainer.");
+      setContactError("Erro de Protocolo. Verifique DATABASE_CONNECTION_URI na Stack.");
+      setDbStatus('FAIL');
     } finally {
       setIsIndexing(false);
     }
@@ -169,6 +171,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (!instance) return;
     setIsFetchingContacts(true);
     setContactError(null);
+    setDbStatus('CHECKING');
     
     const targets = [instance.name, instance.id];
     let success = false;
@@ -184,6 +187,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
             setContacts(unique);
             setIsIndexing(false);
+            setDbStatus('READY');
             success = true;
             break;
           }
@@ -193,17 +197,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
     if (!success) {
       setIsIndexing(true);
-      setContactError(`O motor '${instance.name}' está Online, mas o Postgres está VAZIO. Clique em 'INJETAR NO BANCO'.`);
+      setDbStatus('FAIL');
+      setContactError(`ERRO: Motor ONLINE, mas o Postgres não salvou dados. Isso acontece se a DATABASE_CONNECTION_URI na sua stack estiver incorreta ou apontando para localhost em vez do nome do container.`);
     }
     setIsFetchingContacts(false);
   };
 
   const neuralReset = async (instance: EvolutionInstance) => {
-    const confirmation = confirm(`🚨 RESET NUCLEAR v9.0:\n\nIsso apagará a instância e os dados órfãos. Use se o 'Injetar no Banco' falhar.\n\nProsseguir?`);
+    const confirmation = confirm(`🚨 RESET NUCLEAR v10.0 (Atomic Purge):\n\nIsso apagará a instância física e os registros mortos no Postgres.\n\nRecomendado se o motor estiver travado como "ONLINE" mas o banco retornar erro 500.`);
     if (!confirmation) return;
     
     setIsRestarting(true);
-    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Limpando Registros...', connected: false, timestamp: Date.now(), isResetting: true });
+    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Limpando Memória Baileys...', connected: false, timestamp: Date.now(), isResetting: true });
 
     try {
       const targets = [instance.name, instance.id];
@@ -215,7 +220,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       setSelectedContact(null);
       await new Promise(r => setTimeout(r, 5000));
       createInstance(instance.name);
-    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro' })); }
+    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro Nuclear' })); }
     finally { setIsRestarting(false); }
   };
 
@@ -225,7 +230,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setIsCreatingInstance(true);
     const sanitizedName = instanceName.replace(/[^a-zA-Z0-9-]/g, '');
 
-    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Conectando...', connected: false, timestamp: Date.now(), isResetting: false });
+    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Injetando Settings...', connected: false, timestamp: Date.now(), isResetting: false });
 
     try {
       await fetch(`${EVOLUTION_URL}/instance/create`, {
@@ -247,9 +252,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           const data = await res.json();
           const code = data.base64 || data.qrcode?.base64 || data.code?.base64 || data.qrcode || data.code;
           if (code && typeof code === 'string' && code.length > 50) {
-            setQrModal(p => ({ ...p, code, status: 'Aguardando Leitura...' }));
+            setQrModal(p => ({ ...p, code, status: 'Escanear QR Code' }));
           } else if (data.status === 'open' || data.connectionStatus === 'open') {
-            setQrModal(p => ({ ...p, connected: true, status: 'Sincronizado!' }));
+            setQrModal(p => ({ ...p, connected: true, status: 'Clusters Sincronizados!' }));
             clearInterval(poolingRef.current);
             fetchInstances();
           }
@@ -353,8 +358,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           <div className="flex items-center gap-6">
             <button onClick={() => setIsSidebarExpanded(!isSidebarExpanded)} className="p-2.5 glass rounded-xl text-orange-500 hover:scale-110 transition-transform"><ChevronLeft size={14} className={!isSidebarExpanded ? 'rotate-180' : ''} /></button>
             <div className="flex flex-col">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none italic">Neural Core v9.0</h2>
-              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic">Postgres Enforcer Mode</span>
+              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none italic">Neural Core v10.0</h2>
+              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic">Atomic Postgres Sync</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -405,7 +410,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                 )}
                                 <button onClick={() => { restartInstance(inst) }} className={`p-3 rounded-xl bg-white/[0.02] text-gray-600 hover:text-orange-500 border border-white/5 transition-all ${isRestarting ? 'animate-spin opacity-50' : ''}`}><RotateCw size={16}/></button>
                                 <button onClick={() => { forcePostgresInjection(inst) }} title="Inject Postgres" className="p-3 rounded-xl bg-blue-600/5 text-blue-500 hover:bg-blue-600 hover:text-white border border-blue-500/10 transition-all"><DatabaseBackup size={16}/></button>
-                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v9.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
+                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v10.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
                              </div>
                           </div>
                        </GlassCard>
@@ -424,14 +429,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                           <h3 className="text-xl font-black uppercase italic tracking-tighter text-white">Neural <span className="text-orange-500">Inbox.</span></h3>
                           <div className="flex gap-2">
                             <div 
-                               title="Forçar Injeção no Postgres (v9.0)"
-                               className="p-1.5 glass rounded-lg text-blue-500 cursor-pointer transition-all hover:scale-110 shadow-lg shadow-blue-500/20" 
+                               title="Checagem de Saúde Postgres"
+                               className={`p-1.5 glass rounded-lg cursor-pointer transition-all hover:scale-110 shadow-lg ${dbStatus === 'READY' ? 'text-green-500 shadow-green-500/20' : dbStatus === 'FAIL' ? 'text-red-500 shadow-red-500/20' : 'text-blue-500 shadow-blue-500/20'}`} 
                                onClick={() => { if(selectedInstanceForChat) forcePostgresInjection(selectedInstanceForChat); }}
                             >
-                               <DatabaseZap size={14} className={isIndexing ? 'animate-pulse' : ''} />
+                               {dbStatus === 'CHECKING' ? <Loader2 size={14} className="animate-spin" /> : <DatabaseZap size={14} />}
                             </div>
                             <div 
-                               title="Recarregar"
+                               title="Recarregar Agenda"
                                className="p-1.5 glass rounded-lg text-orange-500 cursor-pointer transition-all hover:scale-110" 
                                onClick={() => { if(selectedInstanceForChat) fetchContacts(selectedInstanceForChat); }}
                             >
@@ -450,7 +455,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             }}
                             className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3 pl-10 pr-10 text-[10px] font-black uppercase tracking-widest outline-none appearance-none focus:border-orange-500/40 transition-all text-white/80 cursor-pointer"
                           >
-                            <option value="" disabled className="bg-[#050505]">Selecione um Motor...</option>
+                            <option value="" disabled className="bg-[#050505]">Selecione um Cluster...</option>
                             {instances.map(inst => (
                               <option key={inst.id} value={inst.id} className="bg-[#050505]">
                                 {inst.name.toUpperCase()} {inst.status === 'CONNECTED' ? '🟢' : '🔴'}
@@ -482,21 +487,24 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         <div className="py-20 text-center space-y-4 px-6">
                            <div className="relative inline-block">
                               <Loader2 className="animate-spin text-orange-500 mx-auto" size={44} strokeWidth={3} />
-                              <DatabaseBackup className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/40" size={14}/>
+                              <Cpu className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/40" size={14}/>
                            </div>
                            <div className="space-y-1">
-                              <p className="text-[10px] font-black uppercase tracking-widest italic text-orange-500 animate-pulse">{isIndexing ? 'Forçando Gravação Postgres...' : 'Lendo Frequência...'}</p>
-                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-700 italic leading-relaxed">Sincronizando cache Baileys com o Banco de Dados Permanente...</p>}
+                              <p className="text-[10px] font-black uppercase tracking-widest italic text-orange-500 animate-pulse">{isIndexing ? 'Sincronizando Postgres...' : 'Lendo Frequência...'}</p>
+                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-700 italic leading-relaxed">O motor está ligado, mas o Postgres retornou vazio. Forçando injeção de dados no disco...</p>}
                            </div>
                         </div>
                       ) : (
                         <>
                           {contactError && contacts.length === 0 && (
                             <div className="p-8 mx-3 mb-2 rounded-[2rem] bg-orange-500/[0.02] border border-orange-500/10 text-center space-y-4">
-                               <ShieldQuestion className="mx-auto text-orange-500/30" size={36}/>
-                               <p className="text-[9px] font-black uppercase tracking-tighter text-orange-500/60 italic leading-relaxed">{contactError}</p>
+                               <ServerCrash className="mx-auto text-red-500/30" size={36}/>
+                               <div className="space-y-2">
+                                  <p className="text-[10px] font-black uppercase text-red-500 italic">Postgres Desconectado</p>
+                                  <p className="text-[8px] font-bold uppercase tracking-tight text-gray-600 leading-relaxed italic">Verifique se DATABASE_CONNECTION_URI está configurada na sua Stack do Portainer.</p>
+                               </div>
                                <div className="flex flex-col gap-3">
-                                  <NeonButton onClick={() => forcePostgresInjection(selectedInstanceForChat)} className="!py-4 !text-[9px] !rounded-xl !bg-blue-600 shadow-blue-500/20">INJETAR NO BANCO</NeonButton>
+                                  <NeonButton onClick={() => forcePostgresInjection(selectedInstanceForChat)} className="!py-4 !text-[9px] !rounded-xl !bg-blue-600 shadow-blue-500/20">REPARAR CONEXÃO</NeonButton>
                                   <button onClick={() => neuralReset(selectedInstanceForChat)} className="text-[8px] text-red-500/50 font-black uppercase underline hover:text-red-500 transition-colors">Reset de Arquitetura</button>
                                </div>
                             </div>
