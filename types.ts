@@ -1,7 +1,7 @@
 
 export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD' | 'THANK_YOU';
 
-export type DashboardTab = 'overview' | 'atendimento' | 'kanban' | 'integracoes' | 'agentes' | 'settings';
+export type DashboardTab = 'overview' | 'atendimento' | 'instancias' | 'agentes' | 'n8n' | 'settings';
 
 export type SubscriptionStatus = 'ACTIVE' | 'TRIALING' | 'EXPIRED' | 'INACTIVE';
 
@@ -58,15 +58,9 @@ export interface Ticket {
   assignedTo: string;
   protocol: string;
   messages: Message[];
-  instanceSource: string; // Nome da instância Evolution que gerou o lead
+  instanceSource: string; 
   value?: number;
   tags?: string[];
   notes?: string;
   lastActivity?: number;
-}
-
-export interface KanbanColumn {
-  id: Ticket['status'];
-  title: string;
-  color: string;
 }

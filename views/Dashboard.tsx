@@ -1,23 +1,14 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  MessageSquare, LogOut, Plus, Loader2, RefreshCw, 
-  Trash2, X, Layers, Search, Send, CheckCircle2, 
-  Smartphone, ShieldCheck, ChevronLeft, Bot, Zap, 
-  Activity, User, Smile, Mic, ArrowRight,
-  Database, QrCode, LayoutDashboard, Power,
-  Paperclip, MoreVertical, Phone, Video, Users, AlertTriangle,
-  RotateCw, ChevronDown, Wifi, WifiOff, ShieldAlert, Eraser, Bomb, Terminal,
-  Cpu, ActivitySquare, Binary, DatabaseZap, HardDriveDownload, Wrench,
-  ShieldQuestion, DatabaseBackup, Info, Link2, ServerCrash, ClipboardCheck,
-  Code2, Settings2, FileCode, Check, Copy, ExternalLink, Save, FileType,
-  FolderTree, FileJson, FileText, Globe, Eye, ShieldX, Network, DatabaseIcon,
-  MousePointer2, Cable, Keyboard, CheckCircle
+  MessageSquare, LogOut, RefreshCw, Layers, ChevronLeft, Zap, 
+  Activity, LayoutDashboard, QrCode, Smartphone, DatabaseZap, 
+  Loader2, Scan, ChevronDown, Cpu, Network, Bot, Settings2,
+  Server, ShieldCheck, Info, MessageCircle, MoreVertical,
+  Plus, Trash2, Power, Wifi, WifiOff, X
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
-import { GlassCard } from '../components/GlassCard';
-import { NeonButton } from '../components/Buttons';
 import { Logo } from '../components/Logo';
 
 interface DashboardProps {
@@ -33,17 +24,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('atendimento');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [selectedInstanceForChat, setSelectedInstanceForChat] = useState<EvolutionInstance | null>(null);
+  const [selectedInstance, setSelectedInstance] = useState<EvolutionInstance | null>(null);
   const [contacts, setContacts] = useState<any[]>([]);
-  const [isFetchingContacts, setIsFetchingContacts] = useState(false);
-  const [isIndexing, setIsIndexing] = useState(false);
-  const [contactError, setContactError] = useState<string | null>(null);
-  const [dbStatus, setDbStatus] = useState<'IDLE' | 'CHECKING' | 'FAIL' | 'READY'>('IDLE');
-  const [showPortainerGuide, setShowPortainerGuide] = useState(false);
-  const [guideStep, setGuideStep] = useState<'sql' | 'recreate'>('sql');
-  const [copied, setCopied] = useState('');
-
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  // Estados para QR Code e Conexão
+  const [qrCodeData, setQrCodeData] = useState<{base64: string, name: string} | null>(null);
+  const [isLoadingQR, setIsLoadingQR] = useState(false);
 
   const getHeaders = (instanceName?: string) => {
     const headers: any = { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' };
@@ -62,233 +50,366 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           id: instData.instanceId || instData.id || instData.instanceName,
           name: instData.instanceName || instData.name,
           status: (instData.status === 'open' || instData.connectionStatus === 'open') ? 'CONNECTED' : 'DISCONNECTED',
-          phone: instData.ownerJid ? instData.ownerJid.split('@')[0] : 'Standby',
+          phone: instData.ownerJid ? instData.ownerJid.split('@')[0] : 'Desconectado',
           profilePicUrl: instData.profilePicUrl || ""
         };
       });
       setInstances(mapped);
-      if (activeTab === 'atendimento' && !selectedInstanceForChat) {
-        const wayia = mapped.find(i => i.name.toLowerCase() === 'wayia' && i.status === 'CONNECTED');
-        if (wayia) setSelectedInstanceForChat(wayia);
-      }
-    } catch (e) { console.error('Cluster Offline.'); }
+      if (!selectedInstance && mapped.length > 0) setSelectedInstance(mapped[0]);
+    } catch (e) {
+      console.error('Falha no cluster Evolution.');
+    }
   };
 
-  const forcePostgresInjection = async (instance: EvolutionInstance) => {
-    setIsIndexing(true);
-    setContactError(null);
-    setDbStatus('CHECKING');
+  const getQRCode = async (instanceName: string) => {
+    setIsLoadingQR(true);
+    setQrCodeData(null);
     try {
-      await fetch(`${EVOLUTION_URL}/instance/setSettings/${instance.name}`, {
-        method: 'POST',
-        headers: getHeaders(instance.name),
-        body: JSON.stringify({ syncFullHistory: true, readMessages: true, readStatus: true, syncContacts: true, syncGroups: false })
-      });
-      await fetch(`${EVOLUTION_URL}/contact/sync/${instance.name}`, { method: 'POST', headers: getHeaders(instance.name) });
-      await new Promise(r => setTimeout(r, 8000));
-      await fetchContacts(instance);
+      const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
+      const data = await res.json();
+      if (data.base64) {
+        setQrCodeData({ base64: data.base64, name: instanceName });
+      }
     } catch (e) {
-      setContactError("FALHA DE COMUNICAÇÃO.");
-      setDbStatus('FAIL');
+      console.error('Erro ao gerar QR Code.');
     } finally {
-      setIsIndexing(false);
+      setIsLoadingQR(false);
+    }
+  };
+
+  const logoutInstance = async (instanceName: string) => {
+    if (!confirm(`Deseja realmente desconectar a instância ${instanceName}?`)) return;
+    try {
+      await fetch(`${EVOLUTION_URL}/instance/logout/${instanceName}`, { 
+        method: 'DELETE', 
+        headers: getHeaders() 
+      });
+      fetchInstances();
+    } catch (e) {
+      console.error('Erro ao desconectar.');
     }
   };
 
   const fetchContacts = async (instance: EvolutionInstance) => {
-    if (!instance) return;
-    setIsFetchingContacts(true);
-    setContactError(null);
+    if (instance.status !== 'CONNECTED') {
+      setContacts([]);
+      return;
+    }
+    setIsLoadingContacts(true);
     try {
       const res = await fetch(`${EVOLUTION_URL}/contact/findMany?instanceName=${instance.name}`, { headers: getHeaders(instance.name) });
-      if (res.ok) {
-        const json = await res.json();
-        const list = json.data || json.contacts || json;
-        if (Array.isArray(list) && list.length > 0) {
-          setContacts(list);
-          setDbStatus('READY');
-          setIsFetchingContacts(false);
-          return;
-        }
-      }
-      setDbStatus('FAIL');
-      setContactError("POSTGRES VAZIO");
-    } catch (e) { setDbStatus('FAIL'); } finally { setIsFetchingContacts(false); }
+      const json = await res.json();
+      const list = json.data || json.contacts || json;
+      setContacts(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.error('Erro ao buscar contatos.');
+    } finally {
+      setIsLoadingContacts(false);
+    }
   };
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(''), 2000);
+  const syncDatabase = async () => {
+    if (!selectedInstance || selectedInstance.status !== 'CONNECTED') return;
+    setIsSyncing(true);
+    try {
+      await fetch(`${EVOLUTION_URL}/instance/setSettings/${selectedInstance.name}`, {
+        method: 'POST',
+        headers: getHeaders(selectedInstance.name),
+        body: JSON.stringify({ syncContacts: true, syncFullHistory: true })
+      });
+      await fetch(`${EVOLUTION_URL}/contact/sync/${selectedInstance.name}`, { 
+        method: 'POST', 
+        headers: getHeaders(selectedInstance.name) 
+      });
+      await new Promise(r => setTimeout(r, 6000));
+      await fetchContacts(selectedInstance);
+    } catch (e) {
+      console.error('Erro na sincronização.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   useEffect(() => {
     fetchInstances();
-    const interval = setInterval(fetchInstances, 60000);
+    const interval = setInterval(fetchInstances, 15000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'atendimento' && selectedInstanceForChat) fetchContacts(selectedInstanceForChat);
-  }, [activeTab, selectedInstanceForChat]);
+    if (selectedInstance && activeTab === 'atendimento') {
+      fetchContacts(selectedInstance);
+    }
+  }, [selectedInstance?.id, selectedInstance?.status, activeTab]);
+
+  const navItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'atendimento', label: 'Atendimento', icon: MessageSquare },
+    { id: 'instancias', label: 'Instâncias', icon: Server },
+    { id: 'agentes', label: 'Agentes IA', icon: Bot },
+    { id: 'n8n', label: 'Fluxos n8n', icon: Network },
+    { id: 'settings', label: 'Ajustes', icon: Settings2 },
+  ];
 
   return (
-    <div className="flex h-screen bg-[#050505] text-white overflow-hidden relative font-sans">
+    <div className="flex h-screen bg-[#050505] text-white overflow-hidden font-sans selection:bg-orange-500/30">
       <div className="fixed inset-0 grid-engine pointer-events-none opacity-5"></div>
       
-      <aside className={`flex flex-col border-r border-white/5 bg-black/40 backdrop-blur-3xl transition-all duration-300 z-50 ${isSidebarExpanded ? 'w-56' : 'w-20'}`}>
-        <div className="p-6 flex justify-center"><Logo size="sm" /></div>
-        <div className="flex-1 px-4 py-6 space-y-2">
-          <button onClick={() => setActiveTab('overview')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${activeTab === 'overview' ? 'bg-orange-500/10 text-orange-500' : 'text-gray-500'}`}>
-             <LayoutDashboard size={16} /> {isSidebarExpanded && <span className="text-[10px] font-black uppercase tracking-widest">Overview</span>}
-          </button>
-          <button onClick={() => setActiveTab('atendimento')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${activeTab === 'atendimento' ? 'bg-orange-500/10 text-orange-500' : 'text-gray-500'}`}>
-             <MessageSquare size={16} /> {isSidebarExpanded && <span className="text-[10px] font-black uppercase tracking-widest">Chats</span>}
-          </button>
-        </div>
-        <div className="p-4 border-t border-white/5">
-          <button onClick={onLogout} className="w-full flex items-center gap-4 px-4 py-4 text-gray-600 hover:text-orange-500 transition-all font-black uppercase text-[10px] tracking-[0.3em]">
-            <LogOut size={16} />
-            {isSidebarExpanded && <span>Sair</span>}
+      {/* SIDEBAR COMANDO TOTAL */}
+      <aside className={`flex flex-col border-r border-white/5 bg-black/40 backdrop-blur-3xl transition-all duration-300 z-50 ${isSidebarExpanded ? 'w-64' : 'w-20'}`}>
+        <div className="p-8 flex justify-center"><Logo size="sm" /></div>
+        
+        <nav className="flex-1 px-4 py-6 space-y-3">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as DashboardTab)}
+              className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all group ${activeTab === item.id ? 'bg-orange-500/10 text-orange-500 shadow-lg shadow-orange-500/5' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+            >
+              <item.icon size={20} className={activeTab === item.id ? 'text-orange-500' : 'group-hover:text-white'} />
+              {isSidebarExpanded && <span className="text-[10px] font-black uppercase tracking-[0.2em]">{item.label}</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-6 border-t border-white/5">
+          <button onClick={onLogout} className="w-full flex items-center gap-4 px-4 py-4 text-gray-600 hover:text-orange-500 transition-all font-black uppercase text-[10px] tracking-[0.3em] group">
+            <LogOut size={18} className="group-hover:-translate-x-1 transition-transform" />
+            {isSidebarExpanded && <span>Desconectar</span>}
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col min-w-0 bg-[#050505]/50 overflow-hidden">
-        <header className="h-16 border-b border-white/5 bg-black/20 backdrop-blur-xl flex items-center justify-between px-8 shrink-0 z-40">
-          <div className="flex items-center gap-6">
-            <button onClick={() => setIsSidebarExpanded(!isSidebarExpanded)} className="p-2.5 glass rounded-xl text-orange-500"><ChevronLeft size={14} className={!isSidebarExpanded ? 'rotate-180' : ''} /></button>
+      {/* CONTEÚDO PRINCIPAL */}
+      <main className="flex-1 flex flex-col min-w-0 bg-[#050505]/50 overflow-hidden relative">
+        <header className="h-20 border-b border-white/5 bg-black/20 backdrop-blur-xl flex items-center justify-between px-10 shrink-0 z-40">
+          <div className="flex items-center gap-8">
+            <button onClick={() => setIsSidebarExpanded(!isSidebarExpanded)} className="p-3 glass rounded-2xl text-orange-500 hover:bg-orange-500/10 transition-all">
+              <ChevronLeft size={16} className={!isSidebarExpanded ? 'rotate-180' : ''} />
+            </button>
             <div className="flex flex-col">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none">Neural Core v21.0</h2>
-              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic italic">Activation Hub</span>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-white italic leading-none">Neural Core v26.0</h2>
+              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic italic">Frequência de Comando Ativa</span>
             </div>
+          </div>
+          
+          <div className="flex items-center gap-6">
+             <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg shadow-orange-500/5">
+               {user.name[0]}
+             </div>
           </div>
         </header>
 
-        <div className="flex-1 flex overflow-hidden">
-           {activeTab === 'atendimento' && (
-             <div className="flex-1 flex overflow-hidden bg-black/40 backdrop-blur-3xl">
-                <div className="w-80 md:w-96 border-r border-white/5 flex flex-col bg-black/10">
-                   <div className="p-6 border-b border-white/5 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-black uppercase italic tracking-tighter text-white">Neural <span className="text-orange-500">Inbox.</span></h3>
-                        <div className="flex gap-2">
-                          <div title="Fix Connection" className="p-1.5 glass rounded-lg text-blue-500 cursor-pointer transition-all hover:scale-110 shadow-lg" onClick={() => setShowPortainerGuide(true)}>
-                             <Zap size={14} />
-                          </div>
-                          <div title="Force Sync" className="p-1.5 glass rounded-lg text-orange-500 cursor-pointer transition-all hover:scale-110" onClick={() => { if(selectedInstanceForChat) forcePostgresInjection(selectedInstanceForChat); }}>
-                             <RefreshCw size={14} className={isIndexing ? 'animate-spin' : ''} />
-                          </div>
+        <div className="flex-1 flex overflow-hidden relative">
+           <AnimatePresence mode="wait">
+             {activeTab === 'atendimento' ? (
+               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex overflow-hidden">
+                  <div className="w-80 md:w-96 border-r border-white/5 flex flex-col bg-black/40 backdrop-blur-3xl">
+                     <div className="p-8 border-b border-white/5 space-y-6">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-2xl font-black uppercase italic tracking-tighter text-white">Neural <span className="text-orange-500">Inbox.</span></h3>
+                          <button 
+                            disabled={!selectedInstance || selectedInstance.status !== 'CONNECTED' || isSyncing}
+                            onClick={syncDatabase}
+                            className={`p-2 glass rounded-xl text-orange-500 hover:scale-110 transition-all ${isSyncing ? 'animate-spin' : ''}`}
+                          >
+                             <RefreshCw size={16} />
+                          </button>
                         </div>
+                        
+                        <div className="relative group">
+                          <select 
+                            value={selectedInstance?.id || ""} 
+                            onChange={(e) => setSelectedInstance(instances.find(i => i.id === e.target.value) || null)}
+                            className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-5 text-[10px] font-black uppercase tracking-[0.2em] outline-none appearance-none focus:border-orange-500/40 transition-all text-white/80 cursor-pointer"
+                          >
+                            {instances.map(inst => ( 
+                              <option key={inst.id} value={inst.id} className="bg-[#050505]">
+                                {inst.name.toUpperCase()} {inst.status === 'CONNECTED' ? '● ONLINE' : '○ OFFLINE'}
+                              </option> 
+                            ))}
+                          </select>
+                          <ChevronDown size={14} className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                        </div>
+                     </div>
+
+                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+                        {selectedInstance?.status === 'DISCONNECTED' ? (
+                          <div className="p-10 rounded-[2.5rem] bg-red-500/5 border border-red-500/10 text-center space-y-6">
+                             <QrCode className="mx-auto text-red-500 animate-pulse" size={48}/>
+                             <p className="text-[10px] font-black uppercase text-white italic tracking-widest">Aguardando Conexão</p>
+                             <p className="text-[8px] font-bold text-gray-500 uppercase leading-relaxed italic">Vá em "Instâncias" para gerar o QR Code.</p>
+                          </div>
+                        ) : (
+                          <>
+                            {isLoadingContacts || isSyncing ? (
+                              <div className="py-20 text-center space-y-6">
+                                 <Loader2 className="animate-spin text-orange-500 mx-auto" size={40} />
+                                 <p className="text-[9px] font-black uppercase text-orange-500 animate-pulse italic">Indexando Postgres...</p>
+                              </div>
+                            ) : (
+                              <>
+                                {contacts.length === 0 && (
+                                  <div className="p-10 rounded-[2rem] bg-orange-500/5 border border-orange-500/10 text-center space-y-4">
+                                     <DatabaseZap className="mx-auto text-orange-500 animate-bounce" size={40}/>
+                                     <p className="text-[11px] font-black uppercase text-white italic">Fila Neural Vazia</p>
+                                     <p className="text-[8px] font-bold text-gray-600 uppercase italic">Nenhum contato sincronizado ainda.</p>
+                                  </div>
+                                )}
+                                
+                                {contacts.map((contact, i) => (
+                                  <motion.div 
+                                    initial={{ opacity: 0, x: -10 }} 
+                                    animate={{ opacity: 1, x: 0 }} 
+                                    transition={{ delay: i * 0.05 }}
+                                    key={contact.id || i} 
+                                    className="p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border border-transparent hover:bg-white/[0.03] group"
+                                  >
+                                     <div className="w-12 h-12 rounded-full bg-black border border-white/5 flex items-center justify-center font-black text-gray-800 text-lg group-hover:text-orange-500 transition-all">
+                                       {(contact.pushName || "?")[0]}
+                                     </div>
+                                     <div className="flex-1 min-w-0">
+                                        <span className="text-[11px] font-black uppercase text-white truncate italic block group-hover:text-orange-500 transition-colors">
+                                          {contact.pushName || contact.name || contact.id}
+                                        </span>
+                                        <p className="text-[8px] font-bold text-gray-700 truncate uppercase mt-0.5 tracking-widest italic">
+                                          {contact.id.split('@')[0]}
+                                        </p>
+                                     </div>
+                                  </motion.div>
+                                ))}
+                              </>
+                            )}
+                          </>
+                        )}
+                     </div>
+                  </div>
+
+                  <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-12 bg-black/20 relative">
+                     <div className="absolute inset-0 grid-engine opacity-5"></div>
+                     <Zap size={100} className="text-orange-500/10 animate-pulse" />
+                     <div className="space-y-4">
+                        <h3 className="text-4xl font-black uppercase italic tracking-tighter text-white/30 leading-none">Neural <span className="text-orange-500/50 italic italic">Terminal.</span></h3>
+                        <p className="text-[10px] font-bold text-gray-800 uppercase tracking-[0.5em] max-w-sm mx-auto leading-loose italic italic">Abra uma conversa na lateral para interceptar dados.</p>
+                     </div>
+                  </div>
+               </motion.div>
+             ) : activeTab === 'instancias' ? (
+               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 p-12 overflow-y-auto custom-scrollbar">
+                  <div className="max-w-6xl mx-auto space-y-12">
+                     <div className="flex items-center justify-between">
+                        <div>
+                           <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500">WayIA.</span></h2>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic italic">Controle e Sincronização de Cluster Evolution.</p>
+                        </div>
+                        <div className="flex gap-4">
+                           <button onClick={fetchInstances} className="p-4 glass rounded-2xl text-orange-500 hover:scale-105 transition-all"><RefreshCw size={20}/></button>
+                           <button className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic italic hover:bg-orange-600 shadow-xl shadow-orange-500/20 transition-all">
+                             <Plus size={16} /> Nova Instância
+                           </button>
+                        </div>
+                     </div>
+
+                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {instances.map(inst => (
+                           <div key={inst.id} className="glass p-8 rounded-[2.5rem] border-white/5 space-y-8 relative overflow-hidden group hover:border-orange-500/20 transition-all">
+                              <div className="flex items-center justify-between">
+                                 <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest italic italic flex items-center gap-2 ${inst.status === 'CONNECTED' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                    {inst.status === 'CONNECTED' ? <Wifi size={10} /> : <WifiOff size={10} />}
+                                    {inst.status}
+                                 </div>
+                                 <button onClick={() => logoutInstance(inst.name)} className="p-2 text-gray-700 hover:text-red-500 transition-colors">
+                                   <Power size={14} />
+                                 </button>
+                              </div>
+
+                              <div className="flex items-center gap-6">
+                                 <div className="w-20 h-20 rounded-3xl bg-black border border-white/5 flex items-center justify-center text-orange-500 shadow-2xl group-hover:scale-110 transition-transform">
+                                    <Smartphone size={32}/>
+                                 </div>
+                                 <div className="space-y-1">
+                                    <h4 className="text-[16px] font-black uppercase italic text-white tracking-tight">{inst.name}</h4>
+                                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest italic italic">{inst.phone}</p>
+                                 </div>
+                              </div>
+
+                              <div className="space-y-3 pt-4">
+                                 {inst.status === 'DISCONNECTED' ? (
+                                   <button 
+                                     onClick={() => getQRCode(inst.name)}
+                                     className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-orange-500 hover:text-white transition-all italic italic"
+                                   >
+                                     Gerar QR Code
+                                   </button>
+                                 ) : (
+                                   <div className="flex gap-3">
+                                      <button className="flex-1 py-4 glass rounded-2xl text-[10px] font-black uppercase tracking-widest text-orange-500 italic italic">Configurar</button>
+                                      <button className="p-4 glass rounded-2xl text-gray-500 hover:text-white transition-all"><MoreVertical size={16}/></button>
+                                   </div>
+                                 )}
+                              </div>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+               </motion.div>
+             ) : (
+               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center justify-center opacity-10 space-y-12">
+                  <div className="p-12 glass rounded-full border-orange-500/20 animate-pulse"><Bot size={80} className="text-orange-500" /></div>
+                  <div className="text-center space-y-4">
+                    <h2 className="text-5xl font-black uppercase italic tracking-[1em] text-white">Módulo <span className="text-orange-500">WayIA.</span></h2>
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.6em] italic italic">Arquitetura em sincronização de cluster v26.0</p>
+                  </div>
+               </motion.div>
+             )}
+           </AnimatePresence>
+
+           {/* MODAL DE QR CODE NEURAL */}
+           <AnimatePresence>
+             {qrCodeData && (
+                <motion.div 
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-3xl flex items-center justify-center p-6"
+                >
+                   <motion.div 
+                     initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+                     className="max-w-md w-full glass p-10 rounded-[3rem] border-orange-500/20 text-center space-y-8 relative overflow-hidden"
+                   >
+                      <button onClick={() => setQrCodeData(null)} className="absolute top-8 right-8 text-gray-500 hover:text-white"><X size={24}/></button>
+                      
+                      <div className="space-y-4">
+                         <h3 className="text-3xl font-black uppercase italic tracking-tighter">Handshake <span className="text-orange-500">Neural.</span></h3>
+                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest italic italic">Instância: {qrCodeData.name.toUpperCase()}</p>
                       </div>
-                      <select value={selectedInstanceForChat?.id || ""} onChange={(e) => { const inst = instances.find(i => i.id === e.target.value); if (inst) setSelectedInstanceForChat(inst); }} className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3 px-4 text-[10px] font-black uppercase tracking-widest outline-none appearance-none focus:border-orange-500/40 transition-all text-white/80">
-                        {instances.map(inst => ( <option key={inst.id} value={inst.id} className="bg-[#050505]">{inst.name.toUpperCase()}</option> ))}
-                      </select>
-                   </div>
 
-                   <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1.5">
-                      {isFetchingContacts || isIndexing ? (
-                        <div className="py-20 text-center space-y-4">
-                           <Loader2 className="animate-spin text-orange-500 mx-auto" size={40} />
-                           <p className="text-[9px] font-black uppercase text-orange-500 animate-pulse italic">Sincronizando com Postgres...</p>
-                        </div>
-                      ) : (
-                        <>
-                          {contactError && (
-                            <div className="p-8 m-3 rounded-[2rem] bg-orange-500/5 border border-orange-500/10 text-center space-y-4 shadow-2xl">
-                               <DatabaseZap className="mx-auto text-orange-500 animate-bounce" size={32}/>
-                               <div className="space-y-1">
-                                  <p className="text-[11px] font-black uppercase text-white italic">Banco Criado com Sucesso!</p>
-                                  <p className="text-[8px] font-bold text-gray-500 uppercase leading-relaxed italic">Agora você precisa dar o "Recreate" para a API começar a salvar os dados lá.</p>
-                               </div>
-                               <NeonButton onClick={() => { setGuideStep('recreate'); setShowPortainerGuide(true); }} className="!py-4 !text-[9px] !rounded-xl">FAZER O RECREATE AGORA</NeonButton>
-                            </div>
-                          )}
-                          {contacts.length === 0 && !contactError && ( <div className="py-20 text-center opacity-20 flex flex-col items-center gap-4"> <Activity size={48} /> <span className="text-[10px] font-black uppercase italic">Neural Frequency Standby</span> </div> )}
-                          {contacts.map((contact, i) => (
-                            <div key={contact.id || i} className="p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border border-transparent hover:bg-white/[0.02]">
-                               <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center font-black text-gray-700">{(contact.pushName || "?")[0]}</div>
-                               <div className="flex-1 min-w-0">
-                                  <span className="text-[11px] font-black uppercase text-white truncate italic block">{contact.pushName || contact.name || contact.id}</span>
-                                  <p className="text-[9px] font-bold text-gray-700 truncate uppercase mt-0.5">{contact.id}</p>
-                               </div>
-                            </div>
-                          ))}
-                        </>
-                      )}
-                   </div>
-                </div>
+                      <div className="relative p-6 bg-white rounded-[2rem] shadow-[0_0_50px_rgba(255,115,0,0.2)]">
+                         <img src={qrCodeData.base64} alt="QR Code" className="w-full h-auto" />
+                         <div className="absolute inset-0 border-8 border-black rounded-[2rem] pointer-events-none"></div>
+                      </div>
 
-                <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-10">
-                   <div className="w-40 h-40 rounded-full border-4 border-orange-500/5 flex items-center justify-center animate-pulse"><Zap size={64} className="text-orange-500/20" /></div>
-                   <h3 className="text-4xl font-black uppercase italic tracking-tighter text-white/40 italic">Sync <span className="text-orange-500/60">Pending.</span></h3>
-                   <p className="text-[10px] font-bold text-gray-800 uppercase tracking-[0.4em] max-w-xs leading-loose italic">Aguardando ativação final via Portainer para início do tráfego de dados.</p>
+                      <div className="space-y-6">
+                         <p className="text-[9px] font-black text-gray-400 uppercase leading-loose tracking-widest italic italic">Escaneie com seu WhatsApp para abrir o túnel de dados WayFlow.</p>
+                         <div className="flex items-center justify-center gap-3 text-orange-500 animate-pulse">
+                            <Activity size={16} />
+                            <span className="text-[8px] font-black uppercase tracking-[0.3em] italic italic">Aguardando Confirmação do Cluster...</span>
+                         </div>
+                      </div>
+                   </motion.div>
+                </motion.div>
+             )}
+           </AnimatePresence>
+
+           {/* LOADING MODAL */}
+           {isLoadingQR && (
+             <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-md flex items-center justify-center">
+                <div className="text-center space-y-6">
+                   <Loader2 className="animate-spin text-orange-500 mx-auto" size={48} />
+                   <p className="text-[10px] font-black uppercase tracking-[0.5em] text-orange-500 animate-pulse italic italic">Sincronizando Túnel Evolution...</p>
                 </div>
              </div>
            )}
         </div>
       </main>
-
-      <AnimatePresence>
-        {showPortainerGuide && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/98 backdrop-blur-3xl">
-             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#050505] border border-orange-500/30 w-full max-w-4xl rounded-[3rem] overflow-hidden shadow-[0_0_150px_rgba(255,115,0,0.15)] flex flex-col max-h-[90vh]">
-                <div className="p-10 border-b border-white/5 flex items-center justify-between bg-orange-600/5">
-                   <div className="flex items-center gap-4">
-                      <div className="p-3 bg-orange-500/10 rounded-2xl text-orange-500"><RotateCw size={24}/></div>
-                      <div>
-                         <h3 className="text-2xl font-black uppercase italic tracking-tighter">PASSO FINAL: <span className="text-orange-500">RECREATE</span></h3>
-                         <p className="text-[9px] font-black text-gray-700 uppercase tracking-widest italic mt-2">Você já criou o banco! Agora vamos ligar a API nele.</p>
-                      </div>
-                   </div>
-                   <button onClick={() => setShowPortainerGuide(false)} className="p-3 glass rounded-2xl text-gray-500 hover:text-white transition-all"><X size={20}/></button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-10 custom-scrollbar space-y-12">
-                   <div className="grid md:grid-cols-2 gap-10">
-                      {/* PASSO 1 */}
-                      <div className="p-8 glass rounded-[2.5rem] border-orange-500/10 space-y-6 relative overflow-hidden group">
-                         <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center text-xs font-black">1</div>
-                         <h4 className="text-[11px] font-black uppercase tracking-widest text-white italic">RECREATE NA API</h4>
-                         <ul className="space-y-4 text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">
-                            <li className="flex items-start gap-3"><CheckCircle size={14} className="text-orange-500 shrink-0 mt-0.5" /> Vá no container da <span className="text-white">Evolution API</span>.</li>
-                            <li className="flex items-start gap-3"><CheckCircle size={14} className="text-orange-500 shrink-0 mt-0.5" /> Clique no botão <span className="text-orange-500">RECREATE</span> (no menu superior).</li>
-                            <li className="flex items-start gap-3"><CheckCircle size={14} className="text-orange-500 shrink-0 mt-0.5" /> Marque a caixa <span className="text-white italic">"Pull latest image"</span>.</li>
-                            <li className="flex items-start gap-3"><CheckCircle size={14} className="text-orange-500 shrink-0 mt-0.5" /> Clique no botão azul <span className="text-white">Recreate</span>.</li>
-                         </ul>
-                      </div>
-
-                      {/* PASSO 2 */}
-                      <div className="p-8 glass rounded-[2.5rem] border-white/5 space-y-6 relative overflow-hidden group">
-                         <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-xs font-black">2</div>
-                         <h4 className="text-[11px] font-black uppercase tracking-widest text-white italic">VERIFICAR REDE (DICA)</h4>
-                         <p className="text-[9px] text-gray-600 font-bold uppercase leading-relaxed italic">Se após o Recreate não funcionar, verifique se ambos os containers (API e Postgres) estão na mesma rede Docker (Ex: <span className="text-blue-500">bridge</span> ou <span className="text-blue-500">wayia-net</span>).</p>
-                         <div className="flex items-center gap-3 p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10">
-                            <Network size={20} className="text-blue-500" />
-                            <span className="text-[8px] font-black uppercase text-gray-700 italic">Containers em redes diferentes não se enxergam.</span>
-                         </div>
-                      </div>
-                   </div>
-
-                   <div className="p-10 bg-orange-600/5 border border-orange-500/10 rounded-[3rem] space-y-8">
-                      <div className="flex items-center gap-6">
-                         <div className="p-4 bg-orange-600/20 rounded-full text-orange-500 animate-pulse"><Info size={32}/></div>
-                         <div>
-                            <h5 className="text-xl font-black uppercase italic tracking-tighter">Quase Lá!</h5>
-                            <p className="text-[10px] font-black text-gray-700 uppercase tracking-widest italic leading-relaxed">
-                               O banco `evolution` já existe, mas a API precisa de um "reboot" para começar a usá-lo. O Recreate faz exatamente isso: reinicia a API e força ela a ler o banco de novo.
-                            </p>
-                         </div>
-                      </div>
-                      <div className="flex gap-4">
-                        <NeonButton onClick={() => setShowPortainerGuide(false)} className="flex-1 !py-5">JÁ FIZ O RECREATE, PODE ATUALIZAR!</NeonButton>
-                      </div>
-                   </div>
-                </div>
-             </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
