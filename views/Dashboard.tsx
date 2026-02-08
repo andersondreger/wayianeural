@@ -9,7 +9,8 @@ import {
   Database, QrCode, LayoutDashboard, Power,
   Paperclip, MoreVertical, Phone, Video, Users, AlertTriangle,
   RotateCw, ChevronDown, Wifi, WifiOff, ShieldAlert, Eraser, Bomb, Terminal,
-  Cpu, ActivitySquare, Binary, DatabaseZap, HardDriveDownload
+  Cpu, ActivitySquare, Binary, DatabaseZap, HardDriveDownload, Wrench,
+  ShieldQuestion, DatabaseBackup
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -78,7 +79,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     try {
       let rawId = c.id || c.remoteJid || c.jid || (c.key && c.key.remoteJid) || "";
       if (!rawId || typeof rawId !== 'string' || !rawId.includes('@')) return null;
-      // Filtra grupos e sistemas para evitar erro o.split
       if (rawId.includes(':') || rawId.includes('@lid') || rawId.includes('@g.us') || rawId.includes('broadcast')) return null;
 
       const phone = rawId.split('@')[0].replace(/\D/g, '');
@@ -122,20 +122,20 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         };
       });
       setInstances(mapped);
-
       if (activeTab === 'atendimento' && !selectedInstanceForChat) {
         const wayia = mapped.find(i => i.name.toLowerCase() === 'wayia' && i.status === 'CONNECTED');
         if (wayia) setSelectedInstanceForChat(wayia);
       }
-    } catch (e) { console.error('Evolution Off-line.'); }
+    } catch (e) { console.error('Cluster em timeout.'); }
   };
 
-  const forceDeepSync = async (instance: EvolutionInstance) => {
+  const forcePostgresInjection = async (instance: EvolutionInstance) => {
     setIsIndexing(true);
     setContactError(null);
+    console.log(`💉 Forçando Injeção Postgres v9.0: ${instance.name}`);
     
     try {
-      // 1. Força persistência via Settings API
+      // 1. Re-aplicar Settings (Garante que a Evolution 'lembre' de salvar)
       await fetch(`${EVOLUTION_URL}/instance/setSettings/${instance.name}`, {
         method: 'POST',
         headers: getHeaders(instance.name),
@@ -148,19 +148,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         })
       });
 
-      // 2. Trigger de Ping para forçar Baileys a descarregar no Postgres
-      await fetch(`${EVOLUTION_URL}/chat/findMessages?instanceName=${instance.name}`, {
+      // 2. Comando Direto de Sincronização de Contatos
+      await fetch(`${EVOLUTION_URL}/contact/sync/${instance.name}`, {
         method: 'POST',
-        headers: getHeaders(instance.name),
-        body: JSON.stringify({ remoteJid: "status@broadcast", page: 1 })
+        headers: getHeaders(instance.name)
       });
 
-      // 3. Aguarda 4 segundos para o Postgres processar
-      await new Promise(r => setTimeout(r, 4000));
+      // 3. Aguarda processamento do banco
+      await new Promise(r => setTimeout(r, 6000));
       await fetchContacts(instance);
 
     } catch (e) {
-      setContactError("Erro no Protocolo de Sincronização. Verifique as ENVs no Portainer.");
+      setContactError("Falha na Injeção. Verifique se o Postgres está rodando no Portainer.");
     } finally {
       setIsIndexing(false);
     }
@@ -176,45 +175,35 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
     for (const target of targets) {
       try {
-        const res = await fetch(`${EVOLUTION_URL}/contact/findMany?instanceName=${target}`, { 
-          method: 'GET',
-          headers: getHeaders(target) 
-        });
-        
+        const res = await fetch(`${EVOLUTION_URL}/contact/findMany?instanceName=${target}`, { headers: getHeaders(target) });
         if (res.ok) {
           const json = await res.json();
           const list = json.data || json.contacts || (Array.isArray(json) ? json : null);
-          
-          if (list && Array.isArray(list)) {
-            if (list.length === 0) {
-              setIsIndexing(true);
-              success = false;
-            } else {
-              const normalized = list.map(normalizeContact).filter((c: any) => c !== null);
-              const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
-              setContacts(unique);
-              setIsIndexing(false);
-              success = true;
-              break;
-            }
+          if (list && Array.isArray(list) && list.length > 0) {
+            const normalized = list.map(normalizeContact).filter((c: any) => c !== null);
+            const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
+            setContacts(unique);
+            setIsIndexing(false);
+            success = true;
+            break;
           }
         }
       } catch (e) { continue; }
     }
 
-    if (!success && !isIndexing) {
-      setContactError(`O motor '${instance.name}' está Online, mas o Postgres está VAZIO. Isso ocorre se DATABASE_SAVE_DATA_CONTACTS estiver false no Portainer.`);
+    if (!success) {
+      setIsIndexing(true);
+      setContactError(`O motor '${instance.name}' está Online, mas o Postgres está VAZIO. Clique em 'INJETAR NO BANCO'.`);
     }
-    
     setIsFetchingContacts(false);
   };
 
   const neuralReset = async (instance: EvolutionInstance) => {
-    const confirmation = confirm(`🚨 RESET ARQUITETO v7.0 (Deep Purge):\n\nIsso apagará a instância e os registros órfãos no Postgres.\n\nUse isso se o motor estiver travado no log como "CONECTADO" mas sem dados.`);
+    const confirmation = confirm(`🚨 RESET NUCLEAR v9.0:\n\nIsso apagará a instância e os dados órfãos. Use se o 'Injetar no Banco' falhar.\n\nProsseguir?`);
     if (!confirmation) return;
     
     setIsRestarting(true);
-    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Limpando Registros Postgres...', connected: false, timestamp: Date.now(), isResetting: true });
+    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Limpando Registros...', connected: false, timestamp: Date.now(), isResetting: true });
 
     try {
       const targets = [instance.name, instance.id];
@@ -226,7 +215,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       setSelectedContact(null);
       await new Promise(r => setTimeout(r, 5000));
       createInstance(instance.name);
-    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro na Limpeza' })); }
+    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro' })); }
     finally { setIsRestarting(false); }
   };
 
@@ -236,7 +225,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setIsCreatingInstance(true);
     const sanitizedName = instanceName.replace(/[^a-zA-Z0-9-]/g, '');
 
-    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Injetando Protocolo...', connected: false, timestamp: Date.now(), isResetting: false });
+    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Conectando...', connected: false, timestamp: Date.now(), isResetting: false });
 
     try {
       await fetch(`${EVOLUTION_URL}/instance/create`, {
@@ -258,9 +247,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           const data = await res.json();
           const code = data.base64 || data.qrcode?.base64 || data.code?.base64 || data.qrcode || data.code;
           if (code && typeof code === 'string' && code.length > 50) {
-            setQrModal(p => ({ ...p, code, status: 'Escanear QR Code' }));
+            setQrModal(p => ({ ...p, code, status: 'Aguardando Leitura...' }));
           } else if (data.status === 'open' || data.connectionStatus === 'open') {
-            setQrModal(p => ({ ...p, connected: true, status: 'Sistema Ativado!' }));
+            setQrModal(p => ({ ...p, connected: true, status: 'Sincronizado!' }));
             clearInterval(poolingRef.current);
             fetchInstances();
           }
@@ -364,8 +353,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           <div className="flex items-center gap-6">
             <button onClick={() => setIsSidebarExpanded(!isSidebarExpanded)} className="p-2.5 glass rounded-xl text-orange-500 hover:scale-110 transition-transform"><ChevronLeft size={14} className={!isSidebarExpanded ? 'rotate-180' : ''} /></button>
             <div className="flex flex-col">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none">Neural Core v7.0</h2>
-              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic">Root Sync Active</span>
+              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none italic">Neural Core v9.0</h2>
+              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic">Postgres Enforcer Mode</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -388,7 +377,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-700 italic">Ativação de clusters de processamento</p>
                     </div>
                     <div className="flex gap-4 w-full md:w-auto">
-                      <input value={newInstanceName} onChange={e => setNewInstanceName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createInstance()} placeholder="ID do Motor..." className="flex-1 md:w-64 bg-white/[0.03] border border-white/5 rounded-xl py-4 px-6 text-[11px] font-black uppercase outline-none focus:border-orange-500/40 transition-all placeholder:text-gray-800" />
+                      <input value={newInstanceName} onChange={e => setNewInstanceName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createInstance()} placeholder="ID do Motor..." className="flex-1 md:w-64 bg-white/[0.03] border border-white/10 rounded-xl py-4 px-6 text-[11px] font-black uppercase outline-none focus:border-orange-500/40 transition-all placeholder:text-gray-800" />
                       <NeonButton onClick={() => createInstance()} className="!px-8 !text-[11px] !py-4">{isCreatingInstance ? <Loader2 className="animate-spin" size={16}/> : 'Ativar Cluster'}</NeonButton>
                     </div>
                   </div>
@@ -415,8 +404,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                   <div className="flex-1 py-3 border border-green-500/10 rounded-xl text-green-500 text-[10px] font-black uppercase text-center bg-green-500/5">Operacional</div>
                                 )}
                                 <button onClick={() => { restartInstance(inst) }} className={`p-3 rounded-xl bg-white/[0.02] text-gray-600 hover:text-orange-500 border border-white/5 transition-all ${isRestarting ? 'animate-spin opacity-50' : ''}`}><RotateCw size={16}/></button>
-                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v7.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
-                                <button onClick={() => { if(confirm('Remover motor?')) fetch(`${EVOLUTION_URL}/instance/delete/${inst.id}`, {method:'DELETE', headers:getHeaders()}).then(()=>fetchInstances()) }} className="p-3 rounded-xl bg-red-600/5 text-red-500/40 hover:bg-red-600 hover:text-white border border-red-500/10 transition-all"><Trash2 size={16}/></button>
+                                <button onClick={() => { forcePostgresInjection(inst) }} title="Inject Postgres" className="p-3 rounded-xl bg-blue-600/5 text-blue-500 hover:bg-blue-600 hover:text-white border border-blue-500/10 transition-all"><DatabaseBackup size={16}/></button>
+                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v9.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
                              </div>
                           </div>
                        </GlassCard>
@@ -435,11 +424,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                           <h3 className="text-xl font-black uppercase italic tracking-tighter text-white">Neural <span className="text-orange-500">Inbox.</span></h3>
                           <div className="flex gap-2">
                             <div 
-                               title="Forçar Sincronização Postgres"
+                               title="Forçar Injeção no Postgres (v9.0)"
                                className="p-1.5 glass rounded-lg text-blue-500 cursor-pointer transition-all hover:scale-110 shadow-lg shadow-blue-500/20" 
-                               onClick={() => { if(selectedInstanceForChat) forceDeepSync(selectedInstanceForChat); }}
+                               onClick={() => { if(selectedInstanceForChat) forcePostgresInjection(selectedInstanceForChat); }}
                             >
-                               <HardDriveDownload size={14} className={isIndexing ? 'animate-bounce' : ''} />
+                               <DatabaseZap size={14} className={isIndexing ? 'animate-pulse' : ''} />
                             </div>
                             <div 
                                title="Recarregar"
@@ -461,7 +450,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             }}
                             className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3 pl-10 pr-10 text-[10px] font-black uppercase tracking-widest outline-none appearance-none focus:border-orange-500/40 transition-all text-white/80 cursor-pointer"
                           >
-                            <option value="" disabled className="bg-[#050505]">Selecione um Cluster...</option>
+                            <option value="" disabled className="bg-[#050505]">Selecione um Motor...</option>
                             {instances.map(inst => (
                               <option key={inst.id} value={inst.id} className="bg-[#050505]">
                                 {inst.name.toUpperCase()} {inst.status === 'CONNECTED' ? '🟢' : '🔴'}
@@ -486,28 +475,28 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1.5">
                       {!selectedInstanceForChat ? (
                         <div className="py-20 text-center px-6 opacity-30">
-                           <Smartphone className="mx-auto mb-4" size={32} />
+                           <Smartphone className="mx-auto mb-4 animate-pulse" size={32} />
                            <p className="text-[9px] font-black uppercase tracking-widest italic">Aguardando Seleção de Motor</p>
                         </div>
                       ) : isFetchingContacts || isIndexing ? (
                         <div className="py-20 text-center space-y-4 px-6">
                            <div className="relative inline-block">
                               <Loader2 className="animate-spin text-orange-500 mx-auto" size={44} strokeWidth={3} />
-                              <HardDriveDownload className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/40" size={14}/>
+                              <DatabaseBackup className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/40" size={14}/>
                            </div>
                            <div className="space-y-1">
-                              <p className="text-[10px] font-black uppercase tracking-widest italic text-orange-500 animate-pulse">{isIndexing ? 'Sincronizando Postgres...' : 'Lendo Frequência...'}</p>
-                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-700 italic leading-relaxed">O motor está operando em cache-RAM. Estamos forçando a gravação permanente no banco de dados.</p>}
+                              <p className="text-[10px] font-black uppercase tracking-widest italic text-orange-500 animate-pulse">{isIndexing ? 'Forçando Gravação Postgres...' : 'Lendo Frequência...'}</p>
+                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-700 italic leading-relaxed">Sincronizando cache Baileys com o Banco de Dados Permanente...</p>}
                            </div>
                         </div>
                       ) : (
                         <>
                           {contactError && contacts.length === 0 && (
                             <div className="p-8 mx-3 mb-2 rounded-[2rem] bg-orange-500/[0.02] border border-orange-500/10 text-center space-y-4">
-                               <ShieldAlert className="mx-auto text-orange-500/30" size={36}/>
+                               <ShieldQuestion className="mx-auto text-orange-500/30" size={36}/>
                                <p className="text-[9px] font-black uppercase tracking-tighter text-orange-500/60 italic leading-relaxed">{contactError}</p>
                                <div className="flex flex-col gap-3">
-                                  <NeonButton onClick={() => forceDeepSync(selectedInstanceForChat)} className="!py-4 !text-[9px] !rounded-xl !bg-blue-600 shadow-blue-500/20">Forçar Sincronismo</NeonButton>
+                                  <NeonButton onClick={() => forcePostgresInjection(selectedInstanceForChat)} className="!py-4 !text-[9px] !rounded-xl !bg-blue-600 shadow-blue-500/20">INJETAR NO BANCO</NeonButton>
                                   <button onClick={() => neuralReset(selectedInstanceForChat)} className="text-[8px] text-red-500/50 font-black uppercase underline hover:text-red-500 transition-colors">Reset de Arquitetura</button>
                                </div>
                             </div>
@@ -516,7 +505,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             <div className="py-20 text-center opacity-10 flex flex-col items-center gap-4">
                                <Database size={48} />
                                <span className="text-[10px] font-black uppercase">Postgres Standby</span>
-                               <button onClick={() => forceDeepSync(selectedInstanceForChat)} className="text-[8px] text-orange-500 underline font-black uppercase tracking-widest">Ativar Escrita</button>
+                               <button onClick={() => forcePostgresInjection(selectedInstanceForChat)} className="text-[8px] text-orange-500 underline font-black uppercase tracking-widest">Ativar Escrita</button>
                             </div>
                           )}
                           {contacts.filter(c => (c.displayName || "").toLowerCase().includes(searchQuery.toLowerCase())).map((contact, i) => (
@@ -589,7 +578,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    ) : (
                      <div className="h-full flex flex-col items-center justify-center p-20 text-center space-y-10">
                         <div className="w-40 h-40 rounded-full border-4 border-orange-500/5 flex items-center justify-center animate-pulse"><MessageSquare size={64} className="text-orange-500/20" /></div>
-                        <h3 className="text-4xl font-black uppercase italic tracking-tighter">Cluster <span className="text-orange-500">Standby.</span></h3>
+                        <h3 className="text-4xl font-black uppercase italic tracking-tighter italic">Cluster <span className="text-orange-500">Standby.</span></h3>
                         <p className="text-[10px] font-bold text-gray-800 uppercase tracking-[0.4em] max-w-xs">Selecione uma transmissão na agenda lateral para iniciar o processamento.</p>
                      </div>
                    )}
