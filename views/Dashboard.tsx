@@ -9,7 +9,7 @@ import {
   Database, QrCode, LayoutDashboard, Power,
   Paperclip, MoreVertical, Phone, Video, Users, AlertTriangle,
   RotateCw, ChevronDown, Wifi, WifiOff, ShieldAlert, Eraser, Bomb, Terminal,
-  Cpu, ActivitySquare, Binary
+  Cpu, ActivitySquare, Binary, DatabaseZap, HardDriveDownload
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -75,31 +75,34 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   }, [chatMessages]);
 
   const normalizeContact = (c: any) => {
-    let rawId = c.id || c.remoteJid || c.jid || (c.key && c.key.remoteJid) || "";
-    if (!rawId || typeof rawId !== 'string' || !rawId.includes('@')) return null;
-    if (rawId.includes(':') || rawId.includes('@lid') || rawId.includes('@g.us') || rawId.includes('broadcast')) return null;
+    try {
+      let rawId = c.id || c.remoteJid || c.jid || (c.key && c.key.remoteJid) || "";
+      if (!rawId || typeof rawId !== 'string' || !rawId.includes('@')) return null;
+      // Filtra grupos e sistemas para evitar erro o.split
+      if (rawId.includes(':') || rawId.includes('@lid') || rawId.includes('@g.us') || rawId.includes('broadcast')) return null;
 
-    const phone = rawId.split('@')[0].replace(/\D/g, '');
-    if (!phone) return null;
+      const phone = rawId.split('@')[0].replace(/\D/g, '');
+      if (!phone) return null;
 
-    const pushName = c.pushName || c.pushname || c.verifiedName || c.contact?.pushName || "";
-    const savedName = c.name || c.contact?.name || "";
-    
-    let finalName = "";
-    if (pushName && !pushName.includes('@')) finalName = pushName;
-    else if (savedName && !savedName.includes('@')) finalName = savedName;
-    else finalName = `+${phone}`;
+      const pushName = c.pushName || c.pushname || c.verifiedName || c.contact?.pushName || "";
+      const savedName = c.name || c.contact?.name || "";
+      
+      let finalName = "";
+      if (pushName && !pushName.includes('@')) finalName = pushName;
+      else if (savedName && !savedName.includes('@')) finalName = savedName;
+      else finalName = `+${phone}`;
 
-    const avatar = c.profilePictureUrl || c.profilePicUrl || c.imgUrl || c.profileUrl || c.contact?.profilePictureUrl || null;
-    
-    return {
-      ...c,
-      id: rawId,
-      displayName: finalName,
-      displayAvatar: (avatar && typeof avatar === 'string' && avatar.length > 10) ? avatar : null,
-      phone: phone,
-      lastMsg: c.message?.conversation || c.content || (c.message?.extendedTextMessage?.text) || ""
-    };
+      const avatar = c.profilePictureUrl || c.profilePicUrl || c.imgUrl || c.profileUrl || c.contact?.profilePictureUrl || null;
+      
+      return {
+        ...c,
+        id: rawId,
+        displayName: finalName,
+        displayAvatar: (avatar && typeof avatar === 'string' && avatar.length > 10) ? avatar : null,
+        phone: phone,
+        lastMsg: c.message?.conversation || c.content || (c.message?.extendedTextMessage?.text) || ""
+      };
+    } catch(e) { return null; }
   };
 
   const fetchInstances = async () => {
@@ -123,50 +126,75 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       if (activeTab === 'atendimento' && !selectedInstanceForChat) {
         const wayia = mapped.find(i => i.name.toLowerCase() === 'wayia' && i.status === 'CONNECTED');
         if (wayia) setSelectedInstanceForChat(wayia);
-        else {
-          const firstConnected = mapped.find(i => i.status === 'CONNECTED');
-          if (firstConnected) setSelectedInstanceForChat(firstConnected);
-        }
       }
+    } catch (e) { console.error('Evolution Off-line.'); }
+  };
+
+  const forceDeepSync = async (instance: EvolutionInstance) => {
+    setIsIndexing(true);
+    setContactError(null);
+    
+    try {
+      // 1. Força persistência via Settings API
+      await fetch(`${EVOLUTION_URL}/instance/setSettings/${instance.name}`, {
+        method: 'POST',
+        headers: getHeaders(instance.name),
+        body: JSON.stringify({ 
+          syncFullHistory: true, 
+          readMessages: true, 
+          readStatus: true,
+          syncContacts: true,
+          syncGroups: false
+        })
+      });
+
+      // 2. Trigger de Ping para forçar Baileys a descarregar no Postgres
+      await fetch(`${EVOLUTION_URL}/chat/findMessages?instanceName=${instance.name}`, {
+        method: 'POST',
+        headers: getHeaders(instance.name),
+        body: JSON.stringify({ remoteJid: "status@broadcast", page: 1 })
+      });
+
+      // 3. Aguarda 4 segundos para o Postgres processar
+      await new Promise(r => setTimeout(r, 4000));
+      await fetchContacts(instance);
+
     } catch (e) {
-      console.error('Falha crítica no Cluster.');
+      setContactError("Erro no Protocolo de Sincronização. Verifique as ENVs no Portainer.");
+    } finally {
+      setIsIndexing(false);
     }
   };
 
   const fetchContacts = async (instance: EvolutionInstance) => {
-    if (isFetchingContacts || !instance) return;
+    if (!instance) return;
     setIsFetchingContacts(true);
     setContactError(null);
-    setIsIndexing(false);
     
-    // Força o Indexer a trabalhar (Comando de Sincronização v5.0)
-    await fetch(`${EVOLUTION_URL}/instance/setSettings/${instance.name}`, {
-      method: 'POST',
-      headers: getHeaders(instance.name),
-      body: JSON.stringify({ syncFullHistory: true, readMessages: true, readStatus: true })
-    }).catch(() => {});
-
     const targets = [instance.name, instance.id];
-    let foundList = null;
+    let success = false;
 
     for (const target of targets) {
       try {
         const res = await fetch(`${EVOLUTION_URL}/contact/findMany?instanceName=${target}`, { 
-          method: 'GET', 
+          method: 'GET',
           headers: getHeaders(target) 
         });
         
         if (res.ok) {
           const json = await res.json();
           const list = json.data || json.contacts || (Array.isArray(json) ? json : null);
+          
           if (list && Array.isArray(list)) {
             if (list.length === 0) {
-              setIsIndexing(true); // Servidor respondeu 200 mas lista vazia = INDEXANDO
+              setIsIndexing(true);
+              success = false;
             } else {
               const normalized = list.map(normalizeContact).filter((c: any) => c !== null);
               const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
               setContacts(unique);
-              foundList = list;
+              setIsIndexing(false);
+              success = true;
               break;
             }
           }
@@ -174,22 +202,21 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       } catch (e) { continue; }
     }
 
-    if (!foundList && !isIndexing) {
-      setContactError(`O motor '${instance.name}' está Online, mas o banco de dados Baileys ainda não liberou o acesso aos contatos. Clique em "Forçar Sincronização".`);
+    if (!success && !isIndexing) {
+      setContactError(`O motor '${instance.name}' está Online, mas o Postgres está VAZIO. Isso ocorre se DATABASE_SAVE_DATA_CONTACTS estiver false no Portainer.`);
     }
     
     setIsFetchingContacts(false);
   };
 
   const neuralReset = async (instance: EvolutionInstance) => {
-    const confirmation = confirm(`🚨 RESET ATÔMICO v5.0 (Deep Clean):\n\nDeseja desintegrar o motor '${instance.name}'?\n\nEste comando limpa o banco de dados SQL e a sessão Redis. Use isso se o motor estiver travado mesmo após a limpeza no Portainer.`);
+    const confirmation = confirm(`🚨 RESET ARQUITETO v7.0 (Deep Purge):\n\nIsso apagará a instância e os registros órfãos no Postgres.\n\nUse isso se o motor estiver travado no log como "CONECTADO" mas sem dados.`);
     if (!confirmation) return;
     
     setIsRestarting(true);
-    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Purgando Registros SQL...', connected: false, timestamp: Date.now(), isResetting: true });
+    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Limpando Registros Postgres...', connected: false, timestamp: Date.now(), isResetting: true });
 
     try {
-      // Limpa Tudo
       const targets = [instance.name, instance.id];
       for (const t of targets) {
         await fetch(`${EVOLUTION_URL}/instance/logout/${t}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
@@ -197,13 +224,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       }
       setContacts([]);
       setSelectedContact(null);
-      await new Promise(r => setTimeout(r, 4000));
+      await new Promise(r => setTimeout(r, 5000));
       createInstance(instance.name);
-    } catch (e) {
-      setQrModal(p => ({ ...p, status: 'Erro no Deep Clean' }));
-    } finally {
-      setIsRestarting(false);
-    }
+    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro na Limpeza' })); }
+    finally { setIsRestarting(false); }
   };
 
   const createInstance = async (name?: string) => {
@@ -212,13 +236,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setIsCreatingInstance(true);
     const sanitizedName = instanceName.replace(/[^a-zA-Z0-9-]/g, '');
 
-    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Injetando Parâmetros...', connected: false, timestamp: Date.now(), isResetting: false });
+    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Injetando Protocolo...', connected: false, timestamp: Date.now(), isResetting: false });
 
     try {
       await fetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST', 
         headers: getHeaders(), 
-        body: JSON.stringify({ instanceName: sanitizedName, qrcode: true, integration: "WHATSAPP-BAILEYS", alwaysOnline: true })
+        body: JSON.stringify({ 
+          instanceName: sanitizedName, 
+          qrcode: true, 
+          integration: "WHATSAPP-BAILEYS", 
+          alwaysOnline: true,
+          syncFullHistory: true
+        })
       });
 
       if (poolingRef.current) clearInterval(poolingRef.current);
@@ -230,19 +260,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           if (code && typeof code === 'string' && code.length > 50) {
             setQrModal(p => ({ ...p, code, status: 'Escanear QR Code' }));
           } else if (data.status === 'open' || data.connectionStatus === 'open') {
-            setQrModal(p => ({ ...p, connected: true, status: 'Motor Ativado!' }));
+            setQrModal(p => ({ ...p, connected: true, status: 'Sistema Ativado!' }));
             clearInterval(poolingRef.current);
             fetchInstances();
           }
         } catch (e) {}
       }, 4500);
-    } catch (e) {
-      setQrModal(p => ({ ...p, status: 'Falha no Cluster' }));
-    } finally {
-      setIsCreatingInstance(false);
-      fetchInstances();
-      setNewInstanceName('');
-    }
+    } catch (e) { setQrModal(p => ({ ...p, status: 'Erro' })); }
+    finally { setIsCreatingInstance(false); fetchInstances(); setNewInstanceName(''); }
   };
 
   const restartInstance = async (instance: EvolutionInstance) => {
@@ -339,14 +364,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           <div className="flex items-center gap-6">
             <button onClick={() => setIsSidebarExpanded(!isSidebarExpanded)} className="p-2.5 glass rounded-xl text-orange-500 hover:scale-110 transition-transform"><ChevronLeft size={14} className={!isSidebarExpanded ? 'rotate-180' : ''} /></button>
             <div className="flex flex-col">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none">Neural Cluster Control</h2>
-              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1">Deep Sync v5.0</span>
+              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none">Neural Core v7.0</h2>
+              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic">Root Sync Active</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
              <div className="text-right hidden sm:block">
                 <div className="text-[10px] font-black uppercase text-white italic tracking-widest">{user.name}</div>
-                <div className="text-[8px] font-bold text-orange-500/50 uppercase tracking-tighter italic">Admin Principal</div>
              </div>
              <div className="w-10 h-10 rounded-xl bg-rajado p-0.5 shadow-xl shadow-orange-500/10">
                 <div className="w-full h-full bg-black rounded-[9px] flex items-center justify-center text-[12px] font-black italic">{user.name?.[0]}</div>
@@ -377,7 +401,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                    <div className="w-14 h-14 rounded-2xl bg-black border border-white/10 flex items-center justify-center overflow-hidden">
                                       {inst.profilePicUrl ? <img src={inst.profilePicUrl} className="w-full h-full object-cover" /> : <Smartphone size={24} className="text-gray-800" />}
                                    </div>
-                                   <div className={`absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full border-[3px] border-[#050505] ${inst.status === 'CONNECTED' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                   <div className={`absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full border-[3px] border-[#050505] ${inst.status === 'CONNECTED' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'}`} />
                                 </div>
                                 <div className="flex-1 overflow-hidden">
                                    <div className="text-xl font-black uppercase italic tracking-tighter text-white truncate leading-none mb-1.5">{inst.name}</div>
@@ -391,7 +415,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                   <div className="flex-1 py-3 border border-green-500/10 rounded-xl text-green-500 text-[10px] font-black uppercase text-center bg-green-500/5">Operacional</div>
                                 )}
                                 <button onClick={() => { restartInstance(inst) }} className={`p-3 rounded-xl bg-white/[0.02] text-gray-600 hover:text-orange-500 border border-white/5 transition-all ${isRestarting ? 'animate-spin opacity-50' : ''}`}><RotateCw size={16}/></button>
-                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v5.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
+                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v7.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
                                 <button onClick={() => { if(confirm('Remover motor?')) fetch(`${EVOLUTION_URL}/instance/delete/${inst.id}`, {method:'DELETE', headers:getHeaders()}).then(()=>fetchInstances()) }} className="p-3 rounded-xl bg-red-600/5 text-red-500/40 hover:bg-red-600 hover:text-white border border-red-500/10 transition-all"><Trash2 size={16}/></button>
                              </div>
                           </div>
@@ -411,11 +435,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                           <h3 className="text-xl font-black uppercase italic tracking-tighter text-white">Neural <span className="text-orange-500">Inbox.</span></h3>
                           <div className="flex gap-2">
                             <div 
-                               title="Forçar Sincronização Baileys"
-                               className="p-1.5 glass rounded-lg text-blue-500 cursor-pointer transition-all hover:scale-110" 
-                               onClick={() => { if(selectedInstanceForChat) fetchContacts(selectedInstanceForChat); }}
+                               title="Forçar Sincronização Postgres"
+                               className="p-1.5 glass rounded-lg text-blue-500 cursor-pointer transition-all hover:scale-110 shadow-lg shadow-blue-500/20" 
+                               onClick={() => { if(selectedInstanceForChat) forceDeepSync(selectedInstanceForChat); }}
                             >
-                               <Binary size={14} className={isFetchingContacts ? 'animate-pulse' : ''} />
+                               <HardDriveDownload size={14} className={isIndexing ? 'animate-bounce' : ''} />
                             </div>
                             <div 
                                title="Recarregar"
@@ -428,7 +452,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         </div>
 
                         <div className="relative group">
-                          <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 w-2 h-2 rounded-full ${selectedInstanceForChat?.status === 'CONNECTED' ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 w-2 h-2 rounded-full ${selectedInstanceForChat?.status === 'CONNECTED' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'}`} />
                           <select 
                             value={selectedInstanceForChat?.id || ""}
                             onChange={(e) => {
@@ -437,14 +461,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             }}
                             className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3 pl-10 pr-10 text-[10px] font-black uppercase tracking-widest outline-none appearance-none focus:border-orange-500/40 transition-all text-white/80 cursor-pointer"
                           >
-                            <option value="" disabled className="bg-[#050505]">Selecionar Motor...</option>
+                            <option value="" disabled className="bg-[#050505]">Selecione um Cluster...</option>
                             {instances.map(inst => (
                               <option key={inst.id} value={inst.id} className="bg-[#050505]">
                                 {inst.name.toUpperCase()} {inst.status === 'CONNECTED' ? '🟢' : '🔴'}
                               </option>
                             ))}
                           </select>
-                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none transition-transform" />
+                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" />
                         </div>
                       </div>
 
@@ -461,31 +485,38 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1.5">
                       {!selectedInstanceForChat ? (
-                        <div className="py-20 text-center px-6">
-                           <Smartphone className="mx-auto mb-4 text-gray-800" size={32} />
-                           <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 italic">Selecione um motor operacional acima</p>
+                        <div className="py-20 text-center px-6 opacity-30">
+                           <Smartphone className="mx-auto mb-4" size={32} />
+                           <p className="text-[9px] font-black uppercase tracking-widest italic">Aguardando Seleção de Motor</p>
                         </div>
                       ) : isFetchingContacts || isIndexing ? (
-                        <div className="py-20 text-center space-y-4">
+                        <div className="py-20 text-center space-y-4 px-6">
                            <div className="relative inline-block">
-                              <Loader2 className="animate-spin text-orange-500 mx-auto" size={32} strokeWidth={3} />
-                              <Binary className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20" size={12}/>
+                              <Loader2 className="animate-spin text-orange-500 mx-auto" size={44} strokeWidth={3} />
+                              <HardDriveDownload className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/40" size={14}/>
                            </div>
                            <div className="space-y-1">
-                              <p className="text-[9px] font-black uppercase tracking-widest italic text-orange-500/50 animate-pulse">{isIndexing ? 'Indexando Agenda Baileys...' : 'Acessando Banco de Dados...'}</p>
-                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-widest text-gray-700 italic">O motor está Online. Aguarde a primeira leitura do celular.</p>}
+                              <p className="text-[10px] font-black uppercase tracking-widest italic text-orange-500 animate-pulse">{isIndexing ? 'Sincronizando Postgres...' : 'Lendo Frequência...'}</p>
+                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-700 italic leading-relaxed">O motor está operando em cache-RAM. Estamos forçando a gravação permanente no banco de dados.</p>}
                            </div>
                         </div>
                       ) : (
                         <>
-                          {contactError && (
-                            <div className="p-6 mx-3 mb-2 rounded-2xl bg-red-500/5 border border-red-500/10 text-center space-y-3">
-                               <ShieldAlert className="mx-auto text-red-500/30" size={24}/>
-                               <p className="text-[9px] font-black uppercase tracking-tighter text-red-500/60 italic">{contactError}</p>
-                               <div className="flex gap-2 justify-center">
-                                  <button onClick={() => fetchContacts(selectedInstanceForChat)} className="text-[8px] text-orange-500 font-black uppercase underline">Forçar Sync</button>
-                                  <button onClick={() => neuralReset(selectedInstanceForChat)} className="text-[8px] text-red-500 font-black uppercase underline">Reset Deep</button>
+                          {contactError && contacts.length === 0 && (
+                            <div className="p-8 mx-3 mb-2 rounded-[2rem] bg-orange-500/[0.02] border border-orange-500/10 text-center space-y-4">
+                               <ShieldAlert className="mx-auto text-orange-500/30" size={36}/>
+                               <p className="text-[9px] font-black uppercase tracking-tighter text-orange-500/60 italic leading-relaxed">{contactError}</p>
+                               <div className="flex flex-col gap-3">
+                                  <NeonButton onClick={() => forceDeepSync(selectedInstanceForChat)} className="!py-4 !text-[9px] !rounded-xl !bg-blue-600 shadow-blue-500/20">Forçar Sincronismo</NeonButton>
+                                  <button onClick={() => neuralReset(selectedInstanceForChat)} className="text-[8px] text-red-500/50 font-black uppercase underline hover:text-red-500 transition-colors">Reset de Arquitetura</button>
                                </div>
+                            </div>
+                          )}
+                          {contacts.length === 0 && !isFetchingContacts && !contactError && !isIndexing && (
+                            <div className="py-20 text-center opacity-10 flex flex-col items-center gap-4">
+                               <Database size={48} />
+                               <span className="text-[10px] font-black uppercase">Postgres Standby</span>
+                               <button onClick={() => forceDeepSync(selectedInstanceForChat)} className="text-[8px] text-orange-500 underline font-black uppercase tracking-widest">Ativar Escrita</button>
                             </div>
                           )}
                           {contacts.filter(c => (c.displayName || "").toLowerCase().includes(searchQuery.toLowerCase())).map((contact, i) => (
@@ -495,8 +526,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                className={`p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border ${selectedContact?.id === contact.id ? 'bg-orange-500/10 border-orange-500/20 shadow-[0_0_25px_rgba(255,115,0,0.03)]' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
                             >
                                <div className="relative shrink-0">
-                                  <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden">
-                                     {contact.displayAvatar ? <img src={contact.displayAvatar} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="text-[14px] font-black italic text-gray-700">{(contact.displayName || "?")[0].toUpperCase()}</div>}
+                                  <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-inner">
+                                     {contact.displayAvatar ? <img src={contact.displayAvatar} className="w-full h-full object-cover" /> : <div className="text-[14px] font-black italic text-gray-700">{(contact.displayName || "?")[0].toUpperCase()}</div>}
                                   </div>
                                </div>
                                <div className="flex-1 min-w-0">
@@ -510,17 +541,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    </div>
                 </div>
 
-                <div className="flex-1 flex flex-col relative">
+                <div className="flex-1 flex flex-col relative bg-black/50">
                    {selectedContact ? (
                      <>
                         <div className="h-20 border-b border-white/5 bg-black/20 flex items-center justify-between px-8 backdrop-blur-xl z-20">
                            <div className="flex items-center gap-5">
-                              <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden relative">
+                              <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden relative shadow-lg">
                                  {selectedContact.displayAvatar ? <img src={selectedContact.displayAvatar} className="w-full h-full object-cover" /> : <div className="text-[16px] font-black italic text-gray-700">{(selectedContact.displayName || "?")[0].toUpperCase()}</div>}
                               </div>
                               <div>
                                  <h4 className="text-lg font-black uppercase italic tracking-tighter text-white leading-none mb-1">{selectedContact.displayName}</h4>
-                                 <span className="text-[9px] font-black text-gray-600 uppercase italic tracking-widest">Cluster: {selectedInstanceForChat?.name}</span>
+                                 <span className="text-[9px] font-black text-orange-500/50 uppercase italic tracking-widest flex items-center gap-2"><Wifi size={10}/> Conexão Neural Wayia</span>
                               </div>
                            </div>
                            <div className="flex items-center gap-4">
@@ -534,12 +565,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                            {isFetchingMessages ? (
                              <div className="h-full flex flex-col items-center justify-center gap-4 opacity-30">
                                 <Loader2 className="animate-spin text-orange-500" size={32} />
-                                <span className="text-[10px] font-black uppercase tracking-widest italic">Lendo Frequência...</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest italic">Descodificando Histórico...</span>
                              </div>
                            ) : (
                              chatMessages.map((msg: any, i) => (
                                <motion.div initial={{ opacity: 0, x: msg.key?.fromMe ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={msg.key?.id || i} className={`flex ${msg.key?.fromMe ? 'justify-end' : 'justify-start'}`}>
-                                  <div className={`p-5 rounded-[2rem] text-sm font-bold shadow-2xl max-w-[70%] ${msg.key?.fromMe ? 'bg-orange-500 text-white rounded-tr-none' : 'glass text-gray-200 rounded-tl-none border-white/10'}`}>
+                                  <div className={`p-5 rounded-[2rem] text-sm font-bold shadow-2xl max-w-[70%] ${msg.key?.fromMe ? 'bg-orange-500 text-white rounded-tr-none border-orange-600' : 'glass text-gray-200 rounded-tl-none border-white/10'}`}>
                                      {msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.content || ""}
                                   </div>
                                </motion.div>
@@ -548,17 +579,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                            <div ref={chatEndRef} />
                         </div>
 
-                        <div className="p-8 border-t border-white/5 bg-black/40 backdrop-blur-2xl">
+                        <div className="p-8 border-t border-white/5 bg-black/60 backdrop-blur-2xl">
                            <form onSubmit={handleSendMessage} className="flex items-center gap-6 max-w-5xl mx-auto">
-                              <input value={messageInput} onChange={e => setMessageInput(e.target.value)} placeholder="Neural Handshake v5.0 Ativo..." className="w-full bg-white/[0.04] border border-white/10 rounded-3xl py-5 px-8 text-sm font-bold outline-none focus:border-orange-500/50 transition-all shadow-inner shadow-black/30" />
-                              <button type="submit" className="p-5 bg-orange-500 rounded-2xl text-white hover:scale-105 transition-all shadow-xl shadow-orange-600/30"><Send size={24} fill="currentColor" /></button>
+                              <input value={messageInput} onChange={e => setMessageInput(e.target.value)} placeholder="Comunicação em tempo real ativada..." className="w-full bg-white/[0.04] border border-white/10 rounded-3xl py-5 px-8 text-sm font-bold outline-none focus:border-orange-500/50 transition-all shadow-inner shadow-black" />
+                              <button type="submit" className="p-5 bg-orange-500 rounded-2xl text-white hover:scale-105 transition-all shadow-xl shadow-orange-600/40"><Send size={24} fill="currentColor" /></button>
                            </form>
                         </div>
                      </>
                    ) : (
                      <div className="h-full flex flex-col items-center justify-center p-20 text-center space-y-10">
-                        <div className="w-32 h-32 rounded-full border-2 border-orange-500/20 flex items-center justify-center animate-pulse"><MessageSquare size={48} className="text-orange-500/30" /></div>
-                        <h3 className="text-3xl font-black uppercase italic tracking-tighter">Terminal <span className="text-orange-500">Standby.</span></h3>
+                        <div className="w-40 h-40 rounded-full border-4 border-orange-500/5 flex items-center justify-center animate-pulse"><MessageSquare size={64} className="text-orange-500/20" /></div>
+                        <h3 className="text-4xl font-black uppercase italic tracking-tighter">Cluster <span className="text-orange-500">Standby.</span></h3>
+                        <p className="text-[10px] font-bold text-gray-800 uppercase tracking-[0.4em] max-w-xs">Selecione uma transmissão na agenda lateral para iniciar o processamento.</p>
                      </div>
                    )}
                 </div>
@@ -570,14 +602,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       <AnimatePresence>
         {qrModal.isOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/98 backdrop-blur-3xl">
-            <div key={qrModal.timestamp} className="bg-[#050505] border border-orange-500/30 p-12 rounded-[3rem] text-center max-w-sm w-full relative">
+            <div key={qrModal.timestamp} className="bg-[#050505] border border-orange-500/30 p-12 rounded-[3rem] text-center max-w-sm w-full relative shadow-[0_0_100px_rgba(255,115,0,0.1)]">
               <button onClick={() => { setQrModal(p => ({ ...p, isOpen: false })); if(poolingRef.current) clearInterval(poolingRef.current); }} className="absolute top-10 right-10 text-gray-800 hover:text-white transition-all"><X size={28}/></button>
               <h3 className="text-3xl font-black uppercase italic text-white mb-10">{qrModal.name}</h3>
               <div className="relative mb-10 flex justify-center">
                  <div className="bg-white p-8 rounded-[2.5rem] flex items-center justify-center min-h-[300px] min-w-[300px] border-[10px] border-white/5 shadow-[0_0_80px_rgba(255,255,255,0.05)]">
                     {qrModal.code ? <img src={qrModal.code.startsWith('data:') ? qrModal.code : `data:image/png;base64,${qrModal.code}`} className="w-full h-auto rounded-xl" /> : <div className="flex flex-col items-center gap-4"><Loader2 className="animate-spin text-orange-500" size={56}/><span className="text-[10px] font-black uppercase text-gray-900">Gerando Handshake...</span></div>}
                  </div>
-                 {qrModal.connected && <div className="absolute inset-0 bg-black/95 rounded-[2.5rem] flex flex-col items-center justify-center border border-green-500/30 text-white"><CheckCircle2 size={64} className="text-green-500 mb-4 shadow-[0_0_30px_rgba(34,197,94,0.3)]"/><h4 className="text-2xl font-black">Conectado</h4><NeonButton className="mt-4" onClick={() => setQrModal(p => ({ ...p, isOpen: false }))}>Acessar</NeonButton></div>}
+                 {qrModal.connected && <div className="absolute inset-0 bg-black/95 rounded-[2.5rem] flex flex-col items-center justify-center border border-green-500/30 text-white"><CheckCircle2 size={72} className="text-green-500 mb-4 shadow-[0_0_40px_rgba(34,197,94,0.4)]"/><h4 className="text-2xl font-black uppercase italic">Conectado</h4><NeonButton className="mt-4" onClick={() => setQrModal(p => ({ ...p, isOpen: false }))}>Acessar Dashboard</NeonButton></div>}
               </div>
               <p className="text-[11px] font-black uppercase tracking-[0.5em] italic text-orange-500">{qrModal.status}</p>
             </div>
