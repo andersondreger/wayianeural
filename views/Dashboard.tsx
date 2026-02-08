@@ -8,7 +8,8 @@ import {
   Activity, User, Smile, Mic, ArrowRight,
   Database, QrCode, LayoutDashboard, Power,
   Paperclip, MoreVertical, Phone, Video, Users, AlertTriangle,
-  RotateCw, ChevronDown, Wifi, WifiOff, ShieldAlert, Eraser, Bomb
+  RotateCw, ChevronDown, Wifi, WifiOff, ShieldAlert, Eraser, Bomb, Terminal,
+  Cpu, ActivitySquare, Binary
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -34,6 +35,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [selectedInstanceForChat, setSelectedInstanceForChat] = useState<EvolutionInstance | null>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [isFetchingContacts, setIsFetchingContacts] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
   const [contactError, setContactError] = useState<string | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
   const [selectedContact, setSelectedContact] = useState<any>(null);
@@ -60,9 +62,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       'apikey': EVOLUTION_API_KEY, 
       'Content-Type': 'application/json'
     };
-    if (instanceName) {
-      headers['instance'] = instanceName;
-    }
+    if (instanceName) headers['instance'] = instanceName;
     return headers;
   };
 
@@ -75,22 +75,20 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   }, [chatMessages]);
 
   const normalizeContact = (c: any) => {
-    // PROTEÇÃO TOTAL o.split: Verifica JIDs antes de processar
     let rawId = c.id || c.remoteJid || c.jid || (c.key && c.key.remoteJid) || "";
-    
     if (!rawId || typeof rawId !== 'string' || !rawId.includes('@')) return null;
-
-    // Filtra JIDs malformados (o.split killer) e grupos
-    if (rawId.includes(':') || rawId.includes('@lid') || rawId.includes('@g.us')) return null;
+    if (rawId.includes(':') || rawId.includes('@lid') || rawId.includes('@g.us') || rawId.includes('broadcast')) return null;
 
     const phone = rawId.split('@')[0].replace(/\D/g, '');
+    if (!phone) return null;
+
     const pushName = c.pushName || c.pushname || c.verifiedName || c.contact?.pushName || "";
     const savedName = c.name || c.contact?.name || "";
     
     let finalName = "";
     if (pushName && !pushName.includes('@')) finalName = pushName;
     else if (savedName && !savedName.includes('@')) finalName = savedName;
-    else finalName = phone ? `+${phone}` : "Contato";
+    else finalName = `+${phone}`;
 
     const avatar = c.profilePictureUrl || c.profilePicUrl || c.imgUrl || c.profileUrl || c.contact?.profilePictureUrl || null;
     
@@ -113,7 +111,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         const instData = i.instance || i;
         const name = (instData.instanceName || instData.name || instData.id || "").trim();
         return {
-          id: instData.id || instData.instanceId || name, // Este é o UUID do log
+          id: instData.id || instData.instanceId || name,
           name: name,
           status: (instData.status === 'open' || instData.connectionStatus === 'open') ? 'CONNECTED' : 'DISCONNECTED',
           phone: instData.ownerJid ? instData.ownerJid.split('@')[0] : 'Standby',
@@ -123,11 +121,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       setInstances(mapped);
 
       if (activeTab === 'atendimento' && !selectedInstanceForChat) {
-        const firstConnected = mapped.find(i => i.status === 'CONNECTED');
-        if (firstConnected) setSelectedInstanceForChat(firstConnected);
+        const wayia = mapped.find(i => i.name.toLowerCase() === 'wayia' && i.status === 'CONNECTED');
+        if (wayia) setSelectedInstanceForChat(wayia);
+        else {
+          const firstConnected = mapped.find(i => i.status === 'CONNECTED');
+          if (firstConnected) setSelectedInstanceForChat(firstConnected);
+        }
       }
     } catch (e) {
-      console.error('Falha na Engine Neural.');
+      console.error('Falha crítica no Cluster.');
     }
   };
 
@@ -135,96 +137,70 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (isFetchingContacts || !instance) return;
     setIsFetchingContacts(true);
     setContactError(null);
-    setContacts([]);
+    setIsIndexing(false);
     
-    console.log(`📡 Sincronização v3.4 [${instance.name}] via UUID: ${instance.id}`);
+    // Força o Indexer a trabalhar (Comando de Sincronização v5.0)
+    await fetch(`${EVOLUTION_URL}/instance/setSettings/${instance.name}`, {
+      method: 'POST',
+      headers: getHeaders(instance.name),
+      body: JSON.stringify({ syncFullHistory: true, readMessages: true, readStatus: true })
+    }).catch(() => {});
 
-    /**
-     * ESTRATÉGIA DE RECUPERAÇÃO v3.4:
-     * 1. Usar o ID (UUID) como chave primária de busca, pois o Nome pode estar em cache 404.
-     * 2. Rota forçada de contatos (ignora cache de chats/grupos).
-     */
-    const queryTargets = [instance.id, instance.name];
-    let listData = null;
+    const targets = [instance.name, instance.id];
+    let foundList = null;
 
-    for (const target of queryTargets) {
+    for (const target of targets) {
       try {
-        const url = `${EVOLUTION_URL}/contact/findMany?instanceName=${target}`;
-        const res = await fetch(url, { 
-          method: 'GET',
-          headers: getHeaders(target as string) 
+        const res = await fetch(`${EVOLUTION_URL}/contact/findMany?instanceName=${target}`, { 
+          method: 'GET', 
+          headers: getHeaders(target) 
         });
         
         if (res.ok) {
           const json = await res.json();
           const list = json.data || json.contacts || (Array.isArray(json) ? json : null);
           if (list && Array.isArray(list)) {
-            listData = list;
-            console.log(`✅ Handshake bem-sucedido com Alvo: ${target}`);
-            break;
+            if (list.length === 0) {
+              setIsIndexing(true); // Servidor respondeu 200 mas lista vazia = INDEXANDO
+            } else {
+              const normalized = list.map(normalizeContact).filter((c: any) => c !== null);
+              const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
+              setContacts(unique);
+              foundList = list;
+              break;
+            }
           }
         }
       } catch (e) { continue; }
     }
 
-    if (!listData) {
-      setContactError(`ERRO CRÍTICO 404: O cluster '${instance.name}' está com os arquivos de sessão corrompidos. O UUID '${instance.id}' não responde. Clique no botão de BOMBA (Atomic Reset) para reconstruir.`);
-      setIsFetchingContacts(false);
-      return;
+    if (!foundList && !isIndexing) {
+      setContactError(`O motor '${instance.name}' está Online, mas o banco de dados Baileys ainda não liberou o acesso aos contatos. Clique em "Forçar Sincronização".`);
     }
-
-    try {
-      const normalized = listData
-        .map(normalizeContact)
-        .filter((c: any) => c !== null);
-
-      const unique = Array.from(new Map(normalized.map(item => [item.id, item])).values());
-      setContacts(unique);
-      
-    } catch (e: any) {
-      setContactError("Erro no processamento da massa de dados Baileys.");
-    } finally {
-      setIsFetchingContacts(false);
-    }
+    
+    setIsFetchingContacts(false);
   };
 
-  // ATOMIC RESET v3.4: A única forma de resolver o erro o.split/404 de vez
   const neuralReset = async (instance: EvolutionInstance) => {
-    const confirmation = confirm(`🚨 ATENÇÃO: Deseja executar o Reset Atômico em '${instance.name}'?\n\nIsso irá apagar todos os arquivos temporários e de sessão do servidor, eliminando o erro 'o.split' e o '404'. Você precisará ler o QR Code novamente.`);
-    
+    const confirmation = confirm(`🚨 RESET ATÔMICO v5.0 (Deep Clean):\n\nDeseja desintegrar o motor '${instance.name}'?\n\nEste comando limpa o banco de dados SQL e a sessão Redis. Use isso se o motor estiver travado mesmo após a limpeza no Portainer.`);
     if (!confirmation) return;
     
     setIsRestarting(true);
-    setQrModal({
-      isOpen: true,
-      name: instance.name,
-      code: '',
-      status: 'Iniciando Limpeza de Cache...',
-      connected: false,
-      timestamp: Date.now(),
-      isResetting: true
-    });
+    setQrModal({ isOpen: true, name: instance.name, code: '', status: 'Purgando Registros SQL...', connected: false, timestamp: Date.now(), isResetting: true });
 
     try {
-      // Seqüência Nuclear de Limpeza (Nome e UUID)
-      console.log("🔥 Disparando Sequência Nuclear...");
-      
-      const resetTargets = [instance.name, instance.id];
-      
-      for (const target of resetTargets) {
-        await fetch(`${EVOLUTION_URL}/instance/logout/${target}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
-        await fetch(`${EVOLUTION_URL}/instance/delete/${target}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
+      // Limpa Tudo
+      const targets = [instance.name, instance.id];
+      for (const t of targets) {
+        await fetch(`${EVOLUTION_URL}/instance/logout/${t}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
+        await fetch(`${EVOLUTION_URL}/instance/delete/${t}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
       }
-
-      setQrModal(p => ({ ...p, status: 'Aguardando Servidor Liberar Lock...' }));
-      await new Promise(r => setTimeout(r, 4000)); // Aguarda o lock do linux ser liberado
-
-      // Recriação Limpa
+      setContacts([]);
+      setSelectedContact(null);
+      await new Promise(r => setTimeout(r, 4000));
       createInstance(instance.name);
-      
     } catch (e) {
-      alert("Falha no Reset Atômico. Verifique sua conexão.");
-      setQrModal(p => ({ ...p, isOpen: false }));
+      setQrModal(p => ({ ...p, status: 'Erro no Deep Clean' }));
     } finally {
       setIsRestarting(false);
     }
@@ -233,30 +209,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const createInstance = async (name?: string) => {
     const instanceName = name || newInstanceName;
     if (!instanceName.trim()) return;
-
     setIsCreatingInstance(true);
     const sanitizedName = instanceName.replace(/[^a-zA-Z0-9-]/g, '');
 
-    setQrModal({
-      isOpen: true,
-      name: sanitizedName,
-      code: '',
-      status: 'Gerando Nova Sessão...',
-      connected: false,
-      timestamp: Date.now(),
-      isResetting: false
-    });
+    setQrModal({ isOpen: true, name: sanitizedName, code: '', status: 'Injetando Parâmetros...', connected: false, timestamp: Date.now(), isResetting: false });
 
     try {
       await fetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST', 
         headers: getHeaders(), 
-        body: JSON.stringify({ 
-          instanceName: sanitizedName, 
-          qrcode: true,
-          integration: "WHATSAPP-BAILEYS",
-          alwaysOnline: true
-        })
+        body: JSON.stringify({ instanceName: sanitizedName, qrcode: true, integration: "WHATSAPP-BAILEYS", alwaysOnline: true })
       });
 
       if (poolingRef.current) clearInterval(poolingRef.current);
@@ -265,19 +227,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           const res = await fetch(`${EVOLUTION_URL}/instance/connect/${sanitizedName}`, { headers: getHeaders() });
           const data = await res.json();
           const code = data.base64 || data.qrcode?.base64 || data.code?.base64 || data.qrcode || data.code;
-          
           if (code && typeof code === 'string' && code.length > 50) {
             setQrModal(p => ({ ...p, code, status: 'Escanear QR Code' }));
           } else if (data.status === 'open' || data.connectionStatus === 'open') {
-            setQrModal(p => ({ ...p, connected: true, status: 'Conectado!' }));
+            setQrModal(p => ({ ...p, connected: true, status: 'Motor Ativado!' }));
             clearInterval(poolingRef.current);
             fetchInstances();
           }
         } catch (e) {}
       }, 4500);
-
     } catch (e) {
-      setQrModal(p => ({ ...p, status: 'Erro na Criação' }));
+      setQrModal(p => ({ ...p, status: 'Falha no Cluster' }));
     } finally {
       setIsCreatingInstance(false);
       fetchInstances();
@@ -294,18 +254,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         setIsRestarting(false);
         fetchInstances();
       }, 6000);
-    } catch (e) {
-      setIsRestarting(false);
-    }
+    } catch (e) { setIsRestarting(false); }
   };
 
   useEffect(() => {
     fetchInstances();
     const interval = setInterval(fetchInstances, 60000);
-    return () => {
-      clearInterval(interval);
-      if (poolingRef.current) clearInterval(poolingRef.current);
-    };
+    return () => { clearInterval(interval); if (poolingRef.current) clearInterval(poolingRef.current); };
   }, []);
 
   useEffect(() => {
@@ -316,54 +271,34 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const loadChat = async (contact: any) => {
     if (!selectedInstanceForChat) return;
-    
     setSelectedContact(contact);
     setIsFetchingMessages(true);
     setChatMessages([]);
-
     try {
       const res = await fetch(`${EVOLUTION_URL}/chat/findMessages?instanceName=${selectedInstanceForChat.id}`, {
         method: 'POST',
         headers: getHeaders(selectedInstanceForChat.id),
         body: JSON.stringify({ remoteJid: contact.id, page: 1 })
       });
-      
       if(res.ok) {
         const json = await res.json();
         const data = json.data || json.messages || json;
-        if (Array.isArray(data)) {
-          setChatMessages([...data].reverse());
-        }
+        if (Array.isArray(data)) setChatMessages([...data].reverse());
       }
-    } catch(e) { 
-      console.error("Erro ao carregar mensagens");
-    } finally {
-      setIsFetchingMessages(false);
-    }
+    } catch(e) { } finally { setIsFetchingMessages(false); }
   };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!messageInput.trim() || !selectedContact || !selectedInstanceForChat) return;
-
     const text = messageInput;
     setMessageInput('');
-
-    const tempMsg = {
-      key: { id: Date.now().toString(), fromMe: true },
-      message: { conversation: text },
-      messageTimestamp: Math.floor(Date.now() / 1000)
-    };
-    setChatMessages(prev => [...prev, tempMsg]);
-
+    setChatMessages(prev => [...prev, { key: { id: Date.now().toString(), fromMe: true }, message: { conversation: text }, messageTimestamp: Math.floor(Date.now() / 1000) }]);
     try {
       await fetch(`${EVOLUTION_URL}/message/sendText/${selectedInstanceForChat.id}`, {
         method: 'POST',
         headers: getHeaders(selectedInstanceForChat.id),
-        body: JSON.stringify({
-          number: selectedContact.id,
-          textMessage: { text }
-        })
+        body: JSON.stringify({ number: selectedContact.id, textMessage: { text } })
       });
     } catch (e) {}
   };
@@ -405,7 +340,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             <button onClick={() => setIsSidebarExpanded(!isSidebarExpanded)} className="p-2.5 glass rounded-xl text-orange-500 hover:scale-110 transition-transform"><ChevronLeft size={14} className={!isSidebarExpanded ? 'rotate-180' : ''} /></button>
             <div className="flex flex-col">
               <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/40 italic leading-none">Neural Cluster Control</h2>
-              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1">Sincronização Ativa</span>
+              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1">Deep Sync v5.0</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -456,7 +391,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                   <div className="flex-1 py-3 border border-green-500/10 rounded-xl text-green-500 text-[10px] font-black uppercase text-center bg-green-500/5">Operacional</div>
                                 )}
                                 <button onClick={() => { restartInstance(inst) }} className={`p-3 rounded-xl bg-white/[0.02] text-gray-600 hover:text-orange-500 border border-white/5 transition-all ${isRestarting ? 'animate-spin opacity-50' : ''}`}><RotateCw size={16}/></button>
-                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset (Limpar Tudo)" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
+                                <button onClick={() => { neuralReset(inst) }} title="Atomic Reset v5.0" className="p-3 rounded-xl bg-orange-600/5 text-orange-500/40 hover:bg-orange-600 hover:text-white border border-orange-500/10 transition-all"><Bomb size={16}/></button>
                                 <button onClick={() => { if(confirm('Remover motor?')) fetch(`${EVOLUTION_URL}/instance/delete/${inst.id}`, {method:'DELETE', headers:getHeaders()}).then(()=>fetchInstances()) }} className="p-3 rounded-xl bg-red-600/5 text-red-500/40 hover:bg-red-600 hover:text-white border border-red-500/10 transition-all"><Trash2 size={16}/></button>
                              </div>
                           </div>
@@ -469,21 +404,29 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
            {activeTab === 'atendimento' && (
              <div className="flex-1 flex overflow-hidden bg-black/40 backdrop-blur-3xl">
-                {/* Contatos Sidebar */}
                 <div className="w-80 md:w-96 border-r border-white/5 flex flex-col bg-black/10">
                    <div className="p-6 border-b border-white/5 space-y-4">
                       <div className="flex flex-col gap-4">
                         <div className="flex items-center justify-between">
                           <h3 className="text-xl font-black uppercase italic tracking-tighter text-white">Neural <span className="text-orange-500">Inbox.</span></h3>
-                          <div 
-                             className="p-1.5 glass rounded-lg text-orange-500 cursor-pointer transition-all hover:scale-110" 
-                             onClick={() => { if(selectedInstanceForChat) fetchContacts(selectedInstanceForChat); }}
-                          >
-                             <RefreshCw size={14} className={isFetchingContacts ? 'animate-spin' : ''} />
+                          <div className="flex gap-2">
+                            <div 
+                               title="Forçar Sincronização Baileys"
+                               className="p-1.5 glass rounded-lg text-blue-500 cursor-pointer transition-all hover:scale-110" 
+                               onClick={() => { if(selectedInstanceForChat) fetchContacts(selectedInstanceForChat); }}
+                            >
+                               <Binary size={14} className={isFetchingContacts ? 'animate-pulse' : ''} />
+                            </div>
+                            <div 
+                               title="Recarregar"
+                               className="p-1.5 glass rounded-lg text-orange-500 cursor-pointer transition-all hover:scale-110" 
+                               onClick={() => { if(selectedInstanceForChat) fetchContacts(selectedInstanceForChat); }}
+                            >
+                               <RefreshCw size={14} className={isFetchingContacts ? 'animate-spin' : ''} />
+                            </div>
                           </div>
                         </div>
 
-                        {/* SELECIONADOR DE MOTOR */}
                         <div className="relative group">
                           <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 w-2 h-2 rounded-full ${selectedInstanceForChat?.status === 'CONNECTED' ? 'bg-green-500' : 'bg-red-500'}`} />
                           <select 
@@ -501,7 +444,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                               </option>
                             ))}
                           </select>
-                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none group-hover:translate-y-[-40%] transition-transform" />
+                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none transition-transform" />
                         </div>
                       </div>
 
@@ -522,27 +465,27 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                            <Smartphone className="mx-auto mb-4 text-gray-800" size={32} />
                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 italic">Selecione um motor operacional acima</p>
                         </div>
-                      ) : isFetchingContacts && contacts.length === 0 ? (
+                      ) : isFetchingContacts || isIndexing ? (
                         <div className="py-20 text-center space-y-4">
-                           <Loader2 className="animate-spin text-orange-500 mx-auto" size={24} strokeWidth={3} />
-                           <p className="text-[9px] font-black uppercase tracking-widest italic text-orange-500/50 animate-pulse">Sincronizando via UUID: {selectedInstanceForChat.id.substring(0,8)}...</p>
+                           <div className="relative inline-block">
+                              <Loader2 className="animate-spin text-orange-500 mx-auto" size={32} strokeWidth={3} />
+                              <Binary className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20" size={12}/>
+                           </div>
+                           <div className="space-y-1">
+                              <p className="text-[9px] font-black uppercase tracking-widest italic text-orange-500/50 animate-pulse">{isIndexing ? 'Indexando Agenda Baileys...' : 'Acessando Banco de Dados...'}</p>
+                              {isIndexing && <p className="text-[7px] font-black uppercase tracking-widest text-gray-700 italic">O motor está Online. Aguarde a primeira leitura do celular.</p>}
+                           </div>
                         </div>
                       ) : (
                         <>
-                          {contactError && contacts.length === 0 && (
+                          {contactError && (
                             <div className="p-6 mx-3 mb-2 rounded-2xl bg-red-500/5 border border-red-500/10 text-center space-y-3">
                                <ShieldAlert className="mx-auto text-red-500/30" size={24}/>
-                               <p className="text-[9px] font-black uppercase tracking-tighter text-red-500/60 leading-relaxed italic">{contactError}</p>
+                               <p className="text-[9px] font-black uppercase tracking-tighter text-red-500/60 italic">{contactError}</p>
                                <div className="flex gap-2 justify-center">
-                                  <button onClick={() => fetchContacts(selectedInstanceForChat)} className="text-[8px] text-orange-500 font-black uppercase underline">Tentar de novo</button>
-                                  <button onClick={() => neuralReset(selectedInstanceForChat)} className="text-[8px] text-red-500 font-black uppercase underline">Atomic Reset</button>
+                                  <button onClick={() => fetchContacts(selectedInstanceForChat)} className="text-[8px] text-orange-500 font-black uppercase underline">Forçar Sync</button>
+                                  <button onClick={() => neuralReset(selectedInstanceForChat)} className="text-[8px] text-red-500 font-black uppercase underline">Reset Deep</button>
                                </div>
-                            </div>
-                          )}
-                          {contacts.length === 0 && !isFetchingContacts && !contactError && (
-                            <div className="py-20 text-center opacity-20">
-                               <MessageSquare className="mx-auto mb-4" size={32} />
-                               <p className="text-[9px] font-black uppercase">Frequência Vazia</p>
                             </div>
                           )}
                           {contacts.filter(c => (c.displayName || "").toLowerCase().includes(searchQuery.toLowerCase())).map((contact, i) => (
@@ -552,35 +495,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                className={`p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border ${selectedContact?.id === contact.id ? 'bg-orange-500/10 border-orange-500/20 shadow-[0_0_25px_rgba(255,115,0,0.03)]' : 'bg-transparent border-transparent hover:bg-white/[0.02]'}`}
                             >
                                <div className="relative shrink-0">
-                                  <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-inner">
-                                     {contact.displayAvatar ? (
-                                       <img 
-                                         src={contact.displayAvatar} 
-                                         referrerPolicy="no-referrer"
-                                         crossOrigin="anonymous"
-                                         className="w-full h-full object-cover" 
-                                         onError={(e) => { 
-                                           e.currentTarget.style.display = 'none'; 
-                                           const parent = e.currentTarget.parentElement;
-                                           if(parent) {
-                                             parent.innerHTML = `<div class="w-full h-full bg-gradient-to-br from-orange-500/20 to-transparent flex items-center justify-center text-[14px] font-black italic text-orange-500/80">${(contact.displayName || "?")[0].toUpperCase()}</div>`;
-                                           }
-                                         }}
-                                       />
-                                     ) : (
-                                       <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center text-[14px] font-black italic text-gray-700">
-                                          {(contact.displayName || "?")[0].toUpperCase()}
-                                       </div>
-                                     )}
+                                  <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden">
+                                     {contact.displayAvatar ? <img src={contact.displayAvatar} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="text-[14px] font-black italic text-gray-700">{(contact.displayName || "?")[0].toUpperCase()}</div>}
                                   </div>
                                </div>
                                <div className="flex-1 min-w-0">
-                                  <span className="text-[11px] font-black uppercase text-white truncate italic tracking-tight block">
-                                    {contact.displayName}
-                                  </span>
-                                  <p className="text-[9px] font-bold text-gray-700 truncate uppercase tracking-tighter italic mt-0.5 leading-none">
-                                    {contact.lastMsg || 'Ativo no Cluster'}
-                                  </p>
+                                  <span className="text-[11px] font-black uppercase text-white truncate italic block">{contact.displayName}</span>
+                                  <p className="text-[9px] font-bold text-gray-700 truncate uppercase mt-0.5 leading-none">{contact.lastMsg || 'Transmissão Ativa'}</p>
                                </div>
                             </div>
                           ))}
@@ -589,46 +510,22 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    </div>
                 </div>
 
-                {/* Chat Area */}
                 <div className="flex-1 flex flex-col relative">
                    {selectedContact ? (
                      <>
                         <div className="h-20 border-b border-white/5 bg-black/20 flex items-center justify-between px-8 backdrop-blur-xl z-20">
                            <div className="flex items-center gap-5">
-                              <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-2xl relative">
-                                 {selectedContact.displayAvatar ? (
-                                   <img 
-                                     src={selectedContact.displayAvatar} 
-                                     referrerPolicy="no-referrer"
-                                     crossOrigin="anonymous"
-                                     className="w-full h-full object-cover" 
-                                     onError={(e) => { 
-                                       e.currentTarget.style.display = 'none'; 
-                                       const parent = e.currentTarget.parentElement;
-                                       if(parent) {
-                                         parent.innerHTML = `<div class="w-full h-full bg-gradient-to-br from-orange-500/20 to-transparent flex items-center justify-center text-[18px] font-black italic text-orange-500/80">${(selectedContact.displayName || "?")[0].toUpperCase()}</div>`;
-                                       }
-                                     }}
-                                   />
-                                 ) : (
-                                   <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center text-[16px] font-black italic text-gray-700">
-                                      {(selectedContact.displayName || "?")[0].toUpperCase()}
-                                   </div>
-                                 )}
+                              <div className="w-12 h-12 rounded-full bg-black border border-white/10 flex items-center justify-center overflow-hidden relative">
+                                 {selectedContact.displayAvatar ? <img src={selectedContact.displayAvatar} className="w-full h-full object-cover" /> : <div className="text-[16px] font-black italic text-gray-700">{(selectedContact.displayName || "?")[0].toUpperCase()}</div>}
                               </div>
                               <div>
-                                 <h4 className="text-lg font-black uppercase italic tracking-tighter text-white leading-none mb-1">
-                                   {selectedContact.displayName}
-                                 </h4>
-                                 <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-                                    <span className="text-[9px] font-black text-gray-600 uppercase tracking-widest italic">UUID: {selectedInstanceForChat?.id.substring(0,12)}</span>
-                                 </div>
+                                 <h4 className="text-lg font-black uppercase italic tracking-tighter text-white leading-none mb-1">{selectedContact.displayName}</h4>
+                                 <span className="text-[9px] font-black text-gray-600 uppercase italic tracking-widest">Cluster: {selectedInstanceForChat?.name}</span>
                               </div>
                            </div>
                            <div className="flex items-center gap-4">
-                              <button className="p-3 glass rounded-xl text-gray-500 hover:text-orange-500 transition-all hover:scale-105"><Phone size={16}/></button>
-                              <button className="p-3 glass rounded-xl text-gray-500 hover:text-orange-500 transition-all hover:scale-105"><Video size={16}/></button>
+                              <button className="p-3 glass rounded-xl text-gray-500 hover:text-orange-500 transition-all"><Phone size={16}/></button>
+                              <button className="p-3 glass rounded-xl text-gray-500 hover:text-orange-500 transition-all"><Video size={16}/></button>
                               <button className="p-3 glass rounded-xl text-gray-500 hover:text-orange-500 transition-all"><MoreVertical size={16}/></button>
                            </div>
                         </div>
@@ -637,57 +534,31 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                            {isFetchingMessages ? (
                              <div className="h-full flex flex-col items-center justify-center gap-4 opacity-30">
                                 <Loader2 className="animate-spin text-orange-500" size={32} />
-                                <span className="text-[10px] font-black uppercase tracking-widest italic">Lendo Logs Neurais...</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest italic">Lendo Frequência...</span>
                              </div>
                            ) : (
-                             chatMessages.map((msg: any, i) => {
-                               const fromMe = msg.key?.fromMe;
-                               const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.content || "";
-                               if (!text) return null;
-                               
-                               return (
-                                 <motion.div initial={{ opacity: 0, x: fromMe ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={msg.key?.id || i} className={`flex ${fromMe ? 'justify-end' : 'justify-start'}`}>
-                                    <div className="max-w-[70%] group">
-                                       <div className={`p-5 rounded-[2rem] text-sm font-bold tracking-tight shadow-2xl relative ${fromMe ? 'bg-orange-500 text-white rounded-tr-none' : 'glass text-gray-200 rounded-tl-none border-white/10'}`}>
-                                          {text}
-                                       </div>
-                                       <div className={`flex items-center gap-2 mt-2 px-2 text-[8px] font-black uppercase text-gray-700 italic tracking-widest ${fromMe ? 'justify-end' : 'justify-start'}`}>
-                                          {msg.messageTimestamp ? new Date(msg.messageTimestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Agora'}
-                                          {fromMe && <CheckCircle2 size={10} className="text-orange-500" />}
-                                       </div>
-                                    </div>
-                                 </motion.div>
-                               );
-                             })
+                             chatMessages.map((msg: any, i) => (
+                               <motion.div initial={{ opacity: 0, x: msg.key?.fromMe ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={msg.key?.id || i} className={`flex ${msg.key?.fromMe ? 'justify-end' : 'justify-start'}`}>
+                                  <div className={`p-5 rounded-[2rem] text-sm font-bold shadow-2xl max-w-[70%] ${msg.key?.fromMe ? 'bg-orange-500 text-white rounded-tr-none' : 'glass text-gray-200 rounded-tl-none border-white/10'}`}>
+                                     {msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.content || ""}
+                                  </div>
+                               </motion.div>
+                             ))
                            )}
                            <div ref={chatEndRef} />
                         </div>
 
                         <div className="p-8 border-t border-white/5 bg-black/40 backdrop-blur-2xl">
                            <form onSubmit={handleSendMessage} className="flex items-center gap-6 max-w-5xl mx-auto">
-                              <div className="flex items-center gap-3">
-                                 <button type="button" className="p-4 glass rounded-2xl text-gray-600 hover:text-orange-500 transition-all"><Smile size={20}/></button>
-                                 <button type="button" className="p-4 glass rounded-2xl text-gray-600 hover:text-orange-500 transition-all"><Paperclip size={20}/></button>
-                              </div>
-                              <div className="flex-1 relative">
-                                 <input value={messageInput} onChange={e => setMessageInput(e.target.value)} placeholder="Neural Handshake ativo..." className="w-full bg-white/[0.04] border border-white/10 rounded-3xl py-5 px-8 text-sm font-bold outline-none focus:border-orange-500/50 transition-all shadow-inner shadow-black/50" />
-                              </div>
-                              <button type="submit" className="p-5 bg-orange-500 rounded-2xl text-white hover:scale-105 active:scale-95 transition-all shadow-xl shadow-orange-600/30"><Send size={24} fill="currentColor" /></button>
+                              <input value={messageInput} onChange={e => setMessageInput(e.target.value)} placeholder="Neural Handshake v5.0 Ativo..." className="w-full bg-white/[0.04] border border-white/10 rounded-3xl py-5 px-8 text-sm font-bold outline-none focus:border-orange-500/50 transition-all shadow-inner shadow-black/30" />
+                              <button type="submit" className="p-5 bg-orange-500 rounded-2xl text-white hover:scale-105 transition-all shadow-xl shadow-orange-600/30"><Send size={24} fill="currentColor" /></button>
                            </form>
                         </div>
                      </>
                    ) : (
                      <div className="h-full flex flex-col items-center justify-center p-20 text-center space-y-10">
-                        <div className="relative">
-                          <div className="w-32 h-32 rounded-full border-2 border-orange-500/20 flex items-center justify-center animate-pulse">
-                            <MessageSquare size={48} className="text-orange-500/30" />
-                          </div>
-                          <div className="absolute inset-0 bg-orange-500/10 blur-[80px] rounded-full" />
-                        </div>
-                        <div className="space-y-4 max-w-xs">
-                           <h3 className="text-3xl font-black uppercase italic tracking-tighter">Terminal <span className="text-orange-500">Standby.</span></h3>
-                           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-700 italic leading-relaxed">Selecione uma transmissão na lateral para iniciar o processamento neural.</p>
-                        </div>
+                        <div className="w-32 h-32 rounded-full border-2 border-orange-500/20 flex items-center justify-center animate-pulse"><MessageSquare size={48} className="text-orange-500/30" /></div>
+                        <h3 className="text-3xl font-black uppercase italic tracking-tighter">Terminal <span className="text-orange-500">Standby.</span></h3>
                      </div>
                    )}
                 </div>
@@ -696,38 +567,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
       </main>
 
-      {/* Modal QR */}
       <AnimatePresence>
         {qrModal.isOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/98 backdrop-blur-3xl">
-            <div key={qrModal.timestamp} className="bg-[#050505] border border-orange-500/30 p-12 rounded-[3rem] text-center max-w-sm w-full relative shadow-[0_0_120px_rgba(255,115,0,0.2)] animate-in zoom-in-95 duration-500">
-              <button onClick={() => { setQrModal(p => ({ ...p, isOpen: false })); if(poolingRef.current) clearInterval(poolingRef.current); }} className="absolute top-10 right-10 text-gray-800 hover:text-white p-2.5 hover:bg-white/5 rounded-full transition-all"><X size={28}/></button>
-              <div className="mb-10 space-y-2">
-                <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">{qrModal.name}</h3>
-                <div className="flex items-center justify-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${qrModal.isResetting ? 'bg-red-500' : 'bg-orange-500'} animate-ping`} />
-                  <p className="text-[11px] font-black uppercase tracking-[0.5em] italic">{qrModal.status}</p>
-                </div>
-              </div>
+            <div key={qrModal.timestamp} className="bg-[#050505] border border-orange-500/30 p-12 rounded-[3rem] text-center max-w-sm w-full relative">
+              <button onClick={() => { setQrModal(p => ({ ...p, isOpen: false })); if(poolingRef.current) clearInterval(poolingRef.current); }} className="absolute top-10 right-10 text-gray-800 hover:text-white transition-all"><X size={28}/></button>
+              <h3 className="text-3xl font-black uppercase italic text-white mb-10">{qrModal.name}</h3>
               <div className="relative mb-10 flex justify-center">
-                 <div className="bg-white p-8 rounded-[2.5rem] flex items-center justify-center min-h-[300px] min-w-[300px] border-[10px] border-white/5 overflow-hidden shadow-2xl">
-                    {qrModal.code ? (
-                      <motion.img initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} src={qrModal.code.startsWith('data:') ? qrModal.code : `data:image/png;base64,${qrModal.code}`} className="w-full h-auto block rounded-xl" />
-                    ) : (
-                      <div className="flex flex-col items-center gap-8 p-10">
-                        <Loader2 className={`animate-spin ${qrModal.isResetting ? 'text-red-500' : 'text-orange-500'}`} size={56} strokeWidth={3} />
-                        <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest italic block">Sincronizando...</span>
-                      </div>
-                    )}
+                 <div className="bg-white p-8 rounded-[2.5rem] flex items-center justify-center min-h-[300px] min-w-[300px] border-[10px] border-white/5 shadow-[0_0_80px_rgba(255,255,255,0.05)]">
+                    {qrModal.code ? <img src={qrModal.code.startsWith('data:') ? qrModal.code : `data:image/png;base64,${qrModal.code}`} className="w-full h-auto rounded-xl" /> : <div className="flex flex-col items-center gap-4"><Loader2 className="animate-spin text-orange-500" size={56}/><span className="text-[10px] font-black uppercase text-gray-900">Gerando Handshake...</span></div>}
                  </div>
-                 {qrModal.connected && (
-                   <div className="absolute inset-0 bg-black/95 backdrop-blur-3xl rounded-[2.5rem] flex flex-col items-center justify-center z-20 border border-green-500/30">
-                      <CheckCircle2 size={64} className="text-green-500 mb-8 shadow-[0_0_40px_rgba(34,197,94,0.3)]" />
-                      <h4 className="text-3xl font-black uppercase italic text-white mb-2 tracking-tighter">Sincronizado</h4>
-                      <NeonButton onClick={() => setQrModal(p => ({ ...p, isOpen: false }))}>Acessar Painel</NeonButton>
-                   </div>
-                 )}
+                 {qrModal.connected && <div className="absolute inset-0 bg-black/95 rounded-[2.5rem] flex flex-col items-center justify-center border border-green-500/30 text-white"><CheckCircle2 size={64} className="text-green-500 mb-4 shadow-[0_0_30px_rgba(34,197,94,0.3)]"/><h4 className="text-2xl font-black">Conectado</h4><NeonButton className="mt-4" onClick={() => setQrModal(p => ({ ...p, isOpen: false }))}>Acessar</NeonButton></div>}
               </div>
+              <p className="text-[11px] font-black uppercase tracking-[0.5em] italic text-orange-500">{qrModal.status}</p>
             </div>
           </div>
         )}
