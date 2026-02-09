@@ -119,23 +119,29 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
     setIsLoadingContacts(true);
     try {
-      // ENDPOINT CORRIGIDO: fetchContacts recupera do banco de dados persistente
-      const res = await fetch(`${EVOLUTION_URL}/contact/fetchContacts/${instance.name}`, { headers: getHeaders() });
-      const json = await res.json();
+      // TENTA BUSCAR DO POSTGRES ( findMany )
+      const resDb = await fetch(`${EVOLUTION_URL}/contact/findMany/${instance.name}`, { headers: getHeaders() });
+      const jsonDb = await resDb.json();
       
       let list = [];
-      // Evolution v2 retorna dentro de data ou direto no array
-      if (Array.isArray(json)) list = json;
-      else if (json.data && Array.isArray(json.data)) list = json.data;
-      else if (json.contacts && Array.isArray(json.contacts)) list = json.contacts;
+      if (Array.isArray(jsonDb)) list = jsonDb;
+      else if (jsonDb.data && Array.isArray(jsonDb.data)) list = jsonDb.data;
+
+      // FALLBACK: SE O POSTGRES ESTIVER VAZIO, BUSCA DO CACHE/RAM DA API ( fetchContacts )
+      if (list.length === 0) {
+        console.log("[Root Cause Fix] Postgres vazio. Tentando busca em Cache...");
+        const resCache = await fetch(`${EVOLUTION_URL}/contact/fetchContacts/${instance.name}`, { headers: getHeaders() });
+        const jsonCache = await resCache.json();
+        if (Array.isArray(jsonCache)) list = jsonCache;
+        else if (jsonCache.data && Array.isArray(jsonCache.data)) list = jsonCache.data;
+        else if (jsonCache.contacts && Array.isArray(jsonCache.contacts)) list = jsonCache.contacts;
+      }
       
-      // Filtro para garantir apenas contatos humanos (remove grupos e entradas vazias)
       const filtered = list.filter((c: any) => c.id && !c.id.includes('@g.us'));
-      
       setContacts(filtered);
-      console.log(`[Postgres Logic] ${filtered.length} registros encontrados.`);
+      console.log(`[Neural Logic] ${filtered.length} contatos carregados.`);
     } catch (e) {
-      console.error('Erro ao ler Postgres.');
+      console.error('Erro ao ler dados da API.');
     } finally {
       setIsLoadingContacts(false);
     }
@@ -147,33 +153,33 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     
     setIsSyncing(true);
     try {
-      // 1. Forçar a Evolution a ligar os gatilhos de gravação no Postgres
-      await fetch(`${EVOLUTION_URL}/instance/setSettings/${targetName}`, {
+      // CAUSA RAIZ: A Instância precisa saber que DEVE salvar no banco de dados.
+      // 1. Forçar Configurações de Persistência Real
+      await fetch(`${EVOLUTION_URL}/settings/set/${targetName}`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ 
-          syncContacts: true, 
-          syncFullHistory: true,
-          readStatus: true,
-          readMessages: true,
-          timeSync: 0
+        body: JSON.stringify({
+          database: true, // Força o uso do Postgres
+          save: true,     // Ativa gravação
+          syncContacts: true,
+          readStatus: true
         })
       });
 
-      // 2. Disparar a sincronização forçada (Dump do Celular -> API -> Postgres)
+      // 2. Disparar Sincronização de Contatos
       await fetch(`${EVOLUTION_URL}/contact/sync/${targetName}`, { 
         method: 'POST', 
         headers: getHeaders() 
       });
 
-      // 3. Delay necessário para o Postgres processar os buffers (conforme seus logs)
-      await new Promise(r => setTimeout(r, 10000));
+      // 3. Aguardar processamento do buffer (Logs indicam checkpoint a cada 5m, vamos esperar 12s para o buffer inicial)
+      await new Promise(r => setTimeout(r, 12000));
       
       if (selectedInstance && targetName === selectedInstance.name) {
         await fetchContacts(selectedInstance);
       }
     } catch (e) {
-      console.error('Falha no Handshake de Sincronia.');
+      console.error('Erro na ponte de sincronia.');
     } finally {
       setIsSyncing(false);
     }
@@ -253,8 +259,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <ChevronLeft size={16} className={!isSidebarExpanded ? 'rotate-180' : ''} />
             </button>
             <div className="flex flex-col">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-white italic leading-none">Neural Core v28.1</h2>
-              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic italic text-glow">Postgres Bridge Active</span>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-white italic leading-none">Neural Core v28.2</h2>
+              <span className="text-[8px] font-bold text-orange-500/50 uppercase tracking-widest mt-1 italic italic text-glow">Database Mode Enabled</span>
             </div>
           </div>
           <div className="flex items-center gap-6">
@@ -314,7 +320,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             {isLoadingContacts || isSyncing ? (
                               <div className="py-20 text-center space-y-6">
                                  <Loader2 className="animate-spin text-orange-500 mx-auto" size={40} />
-                                 <p className="text-[9px] font-black uppercase text-orange-500 animate-pulse italic">Acessando Postgres...</p>
+                                 <p className="text-[9px] font-black uppercase text-orange-500 animate-pulse italic text-glow">Varrendo Banco de Dados...</p>
                               </div>
                             ) : (
                               <>
@@ -322,7 +328,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                   <div className="p-10 rounded-[2rem] bg-orange-500/5 border border-orange-500/10 text-center space-y-4">
                                      <DatabaseZap className="mx-auto text-orange-500 animate-bounce" size={40}/>
                                      <p className="text-[11px] font-black uppercase text-white italic">Fila Vazia</p>
-                                     <p className="text-[8px] font-bold text-gray-600 uppercase italic">Use o ícone de Sincronia acima para carregar o banco de dados.</p>
+                                     <p className="text-[8px] font-bold text-gray-600 uppercase italic leading-loose">Pressione o botão de Sincronia acima para forçar a gravação no Postgres.</p>
                                   </div>
                                 )}
                                 {contacts.map((contact, i) => (
@@ -333,8 +339,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                     key={contact.id || i} 
                                     className="p-4 rounded-2xl flex items-center gap-4 cursor-pointer transition-all border border-transparent hover:bg-white/[0.03] group"
                                   >
-                                     <div className="w-12 h-12 rounded-full bg-black border border-white/5 flex items-center justify-center font-black text-gray-800 text-lg group-hover:text-orange-500 transition-all">
-                                       {(contact.pushName || contact.name || "?")[0]}
+                                     <div className="w-12 h-12 rounded-full bg-black border border-white/5 flex items-center justify-center font-black text-gray-800 text-lg group-hover:text-orange-500 transition-all overflow-hidden shadow-2xl">
+                                       {contact.profilePicUrl ? (
+                                         <img src={contact.profilePicUrl} className="w-full h-full object-cover" />
+                                       ) : (
+                                         (contact.pushName || contact.name || "?")[0]
+                                       )}
                                      </div>
                                      <div className="flex-1 min-w-0">
                                         <span className="text-[11px] font-black uppercase text-white truncate italic block group-hover:text-orange-500">
@@ -358,7 +368,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <Zap size={100} className="text-orange-500/10 animate-pulse" />
                      <div className="space-y-4">
                         <h3 className="text-4xl font-black uppercase italic tracking-tighter text-white/30 leading-none">Neural <span className="text-orange-500/50 italic italic">Terminal.</span></h3>
-                        <p className="text-[10px] font-bold text-gray-800 uppercase tracking-[0.5em] max-w-sm mx-auto leading-loose italic italic">Abra uma transmissão para visualizar os dados sincronizados.</p>
+                        <p className="text-[10px] font-bold text-gray-800 uppercase tracking-[0.5em] max-w-sm mx-auto leading-loose italic italic">Seleção de canal ativa. Aguardando sincronia do banco.</p>
                      </div>
                   </div>
                </motion.div>
@@ -368,7 +378,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex items-center justify-between">
                         <div>
                            <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500">WayIA.</span></h2>
-                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic italic">Controle de Cluster em Tempo Real.</p>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic italic">Sincronização Atômica com Postgres.</p>
                         </div>
                         <div className="flex gap-4">
                            <button onClick={fetchInstances} className="p-4 glass rounded-2xl text-orange-500 hover:scale-105 transition-all"><RefreshCw size={20}/></button>
@@ -394,7 +404,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                       onClick={() => syncDatabase(inst.name)}
                                       disabled={inst.status !== 'CONNECTED' || isSyncing}
                                       className="p-2 text-gray-700 hover:text-orange-500 transition-colors"
-                                      title="Forçar Sincronia no Banco"
+                                      title="Forçar Persistência no Postgres"
                                     >
                                        <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
                                     </button>
@@ -448,7 +458,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                   <div className="p-12 glass rounded-full border-orange-500/20 animate-pulse"><Bot size={80} className="text-orange-500" /></div>
                   <div className="text-center space-y-4">
                     <h2 className="text-5xl font-black uppercase italic tracking-[1em] text-white">Neural <span className="text-orange-500">WayIA.</span></h2>
-                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.6em] italic italic italic">Neural Operation v28.1</p>
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.6em] italic italic italic text-glow">Neural Operation v28.2</p>
                   </div>
                </motion.div>
              )}
@@ -457,19 +467,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
            <AnimatePresence>
              {isCreateModalOpen && (
                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-3xl flex items-center justify-center p-6">
-                  <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-sm w-full glass p-10 rounded-[3rem] border-orange-500/20 space-y-8 text-center relative">
+                  <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-sm w-full glass p-10 rounded-[3rem] border-orange-500/20 space-y-8 text-center relative shadow-[0_0_100px_rgba(255,115,0,0.1)]">
                      <button onClick={() => setIsCreateModalOpen(false)} className="absolute top-8 right-8 text-gray-600 hover:text-white"><X size={20}/></button>
                      <div className="space-y-3">
-                        <div className="w-16 h-16 bg-orange-500/10 rounded-3xl flex items-center justify-center text-orange-500 mx-auto mb-6"><Plus size={32}/></div>
+                        <div className="w-16 h-16 bg-orange-500/10 rounded-3xl flex items-center justify-center text-orange-500 mx-auto mb-6 shadow-2xl"><Plus size={32}/></div>
                         <h3 className="text-2xl font-black uppercase italic tracking-tighter">Novo <span className="text-orange-500">Terminal.</span></h3>
-                        <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest italic italic">Nome identificador no cluster.</p>
+                        <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest italic italic">O Cluster será provisionado imediatamente.</p>
                      </div>
                      <input 
                        autoFocus
-                       placeholder="ex: vendas_suporte"
+                       placeholder="ex: vendas_2025"
                        value={newInstanceName}
                        onChange={e => setNewInstanceName(e.target.value)}
-                       className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-orange-500/40 text-center uppercase tracking-widest transition-all"
+                       className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-orange-500/40 text-center uppercase tracking-widest transition-all text-white"
                      />
                      <button 
                        disabled={isCreatingInstance || !newInstanceName}
@@ -487,21 +497,21 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
            <AnimatePresence>
              {qrCodeData && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[130] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6">
-                   <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-md w-full glass p-12 rounded-[3.5rem] border-orange-500/20 text-center space-y-10 relative">
+                   <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-md w-full glass p-12 rounded-[3.5rem] border-orange-500/20 text-center space-y-10 relative shadow-[0_0_150px_rgba(255,115,0,0.15)]">
                       <button onClick={() => setQrCodeData(null)} className="absolute top-10 right-10 text-gray-600 hover:text-white"><X size={24}/></button>
                       <div className="space-y-4">
                          <h3 className="text-3xl font-black uppercase italic tracking-tighter leading-none">Conectar <span className="text-orange-500">WhatsApp.</span></h3>
                          <p className="text-[9px] font-black text-gray-600 uppercase tracking-[0.3em] italic">Cluster: {qrCodeData.name.toUpperCase()}</p>
                       </div>
-                      <div className="relative p-8 bg-white rounded-[2.5rem] shadow-[0_0_80px_rgba(255,115,0,0.15)] group">
-                         <img src={qrCodeData.base64} alt="Scan QR" className="w-full h-auto rounded-xl" />
-                         <div className="absolute inset-0 border-[12px] border-black rounded-[2.5rem] pointer-events-none group-hover:border-black/80 transition-all"></div>
+                      <div className="relative p-8 bg-white rounded-[2.5rem] shadow-[0_0_80px_rgba(255,115,0,0.2)] group overflow-hidden">
+                         <img src={qrCodeData.base64} alt="Scan QR" className="w-full h-auto rounded-xl scale-110" />
+                         <div className="absolute inset-0 border-[12px] border-black rounded-[2.5rem] pointer-events-none group-hover:border-black/50 transition-all"></div>
                       </div>
                       <div className="space-y-6">
-                         <p className="text-[10px] font-black text-gray-400 uppercase leading-relaxed tracking-widest italic italic">Aponte o scanner do WhatsApp para abrir o túnel WayIA.</p>
+                         <p className="text-[10px] font-black text-gray-400 uppercase leading-relaxed tracking-widest italic italic">Use o seu smartphone para autorizar o acesso ao Terminal Neural.</p>
                          <div className="flex items-center justify-center gap-4 text-orange-500 animate-pulse">
                             <Activity size={18} />
-                            <span className="text-[9px] font-black uppercase tracking-[0.4em] italic italic">Escutando Handshake...</span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.4em] italic italic">Aguardando Handshake...</span>
                          </div>
                       </div>
                    </motion.div>
@@ -511,11 +521,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
            {isSyncing && (
              <div className="fixed inset-0 z-[140] bg-black/60 backdrop-blur-md flex items-center justify-center">
-                <div className="text-center space-y-6 glass p-16 rounded-[4rem] border-orange-500/20">
+                <div className="text-center space-y-6 glass p-16 rounded-[4rem] border-orange-500/20 shadow-2xl">
                    <Loader2 className="animate-spin text-orange-500 mx-auto" size={64} />
                    <div className="space-y-2">
-                     <p className="text-[12px] font-black uppercase tracking-[0.5em] text-orange-500 animate-pulse italic">Neural Sync v28.1</p>
-                     <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest italic">Forçando persistência no banco Postgres...</p>
+                     <p className="text-[12px] font-black uppercase tracking-[0.5em] text-orange-500 animate-pulse italic">Neural Persist v28.2</p>
+                     <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest italic">Habilitando gatilhos de escrita no Postgres...</p>
                    </div>
                 </div>
              </div>
