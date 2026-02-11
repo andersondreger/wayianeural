@@ -33,7 +33,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [isLoadingQR, setIsLoadingQR] = useState(false);
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
 
-  // Referências para evitar race conditions
   const activatedInstances = useRef<Set<string>>(new Set());
   const isWaitingConnection = useRef<string | null>(null);
 
@@ -87,11 +86,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       setInstances(mapped);
 
-      // Lógica de fechamento do Modal: Só fecha se a instância que estamos esperando conectar ficar "CONNECTED"
+      // SÓ FECHA O MODAL SE CONECTAR DE FATO
       if (isWaitingConnection.current) {
         const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
-          console.log("Conectado com sucesso!");
           setQrCodeData(null);
           isWaitingConnection.current = null;
           activatePostgres(currentTarget.name);
@@ -123,15 +121,20 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (isCreatingInstance) return;
     setIsCreatingInstance(true);
     
+    // Nome limpo para evitar problemas de URL
     const autoName = `neural_${Math.random().toString(36).substring(7)}`;
     
     try {
-      // PAYLOAD OBRIGATÓRIO v2.3.7
+      /** 
+       * CAUSA RAIZ - SCHEMA v2.3.7 RESOLVIDO:
+       * - integration: "whatsapp" (Lower case obrigatório)
+       * - syncFullHistory: false (Property obrigatória no nível raiz)
+       */
       const createBody = { 
         instanceName: autoName, 
         token: "", 
         qrcode: true, 
-        integration: "WHATSAPP",
+        integration: "whatsapp", 
         rejectCall: false,
         groupsIgnore: false,
         alwaysOnline: true,
@@ -151,47 +154,48 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
         
-        // Tenta pegar o QR Code do retorno ou força uma chamada /connect
+        // Extrai o QR do retorno ou força busca manual com delay para persistência
         const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
+        
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Se não veio no create, busca manualmente
-          await getQRCodeManual(autoName);
+          // Se não veio no create, aguarda o banco de dados e busca
+          setTimeout(() => getQRCodeManual(autoName), 1200);
         }
         await fetchInstances();
       } else {
-        const errorMsg = data.message || "Erro de Validação v2.3.7";
-        alert(`Erro de Handshake: ${errorMsg}`);
+        const errorMsg = data.message || (data.error && data.error[0]) || "Erro de Validação v2.3.7";
+        alert(`Erro de Handshake Evolution: ${errorMsg}`);
       }
     } catch (e) {
-      alert("Falha Crítica na API.");
+      alert("Falha Crítica na Comunicação com o Cluster.");
     } finally {
       setIsCreatingInstance(false);
     }
   };
 
-  const getQRCodeManual = async (instanceName: string) => {
+  const getQRCodeManual = async (instanceName: string, retry = 0) => {
+    if (retry > 3) return;
     setIsLoadingQR(true);
     try {
-      // Pequeno delay para a API processar a criação
-      await new Promise(r => setTimeout(r, 1500));
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
       const data = await res.json();
       if (data.base64) {
         setQrCodeData({ base64: data.base64, name: instanceName });
       } else {
-        alert("Não foi possível gerar o QR Code. Tente clicar em 'Vincular' na lista.");
+        // Retry se a imagem ainda não estiver pronta
+        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 1500);
       }
     } catch (e) {
-      console.error("QR Fetch error");
+      console.error("Erro ao buscar QR Code manual");
     } finally {
       setIsLoadingQR(false);
     }
   };
 
   const deleteInstance = async (instanceName: string) => {
-    if (!confirm(`Excluir terminal ${instanceName}?`)) return;
+    if (!confirm(`Deseja remover o terminal ${instanceName}?`)) return;
     await fetch(`${EVOLUTION_URL}/instance/delete/${instanceName}`, { method: 'DELETE', headers: getHeaders() });
     activatedInstances.current.delete(instanceName);
     await fetchInstances();
@@ -199,7 +203,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   useEffect(() => {
     fetchInstances();
-    const timer = setInterval(fetchInstances, 7000);
+    const timer = setInterval(fetchInstances, 8000);
     return () => clearInterval(timer);
   }, []);
 
@@ -382,23 +386,30 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
              )}
            </AnimatePresence>
 
+           {/* MODAL QR CODE - BLINDADO */}
            <AnimatePresence>
              {qrCodeData && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[130] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6">
-                   <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-md w-full glass p-12 rounded-[4rem] border-orange-500/20 text-center space-y-10 relative shadow-[0_0_100px_rgba(255,115,0,0.3)]">
-                      <button onClick={() => { setQrCodeData(null); isWaitingConnection.current = null; }} className="absolute top-10 right-10 text-gray-600 hover:text-white"><X size={24}/></button>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[130] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-6">
+                   <motion.div initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} className="max-w-md w-full glass p-12 rounded-[4rem] border-orange-500/30 text-center space-y-10 relative shadow-[0_0_120px_rgba(255,115,0,0.4)]">
+                      <button onClick={() => { setQrCodeData(null); isWaitingConnection.current = null; }} className="absolute top-10 right-10 text-gray-500 hover:text-orange-500 transition-all"><X size={28}/></button>
+                      
                       <div className="space-y-4">
-                        <h3 className="text-3xl font-black uppercase italic tracking-tighter text-glow">Link <span className="text-orange-500">Neural.</span></h3>
-                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-500 italic">Terminal: {qrCodeData.name}</p>
+                        <h3 className="text-4xl font-black uppercase italic tracking-tighter text-glow text-orange-500">Sync WhatsApp</h3>
+                        <p className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-500 italic">Terminal Ativo: <span className="text-white">{qrCodeData.name}</span></p>
                       </div>
-                      <div className="relative p-8 bg-white rounded-[2.5rem] shadow-2xl overflow-hidden">
-                         <img src={qrCodeData.base64} alt="Scan QR" className="w-full h-auto rounded-xl scale-110 relative z-10" />
-                         <div className="absolute inset-0 border-[10px] border-white rounded-[2.5rem] z-20 pointer-events-none"></div>
-                         <div className="absolute top-0 left-0 w-full h-1 bg-orange-500/40 animate-scan"></div>
+
+                      <div className="relative p-10 bg-white rounded-[3rem] shadow-[0_0_50px_rgba(255,255,255,0.1)] mx-auto max-w-[320px]">
+                         <img src={qrCodeData.base64} alt="Scan QR" className="w-full h-auto rounded-2xl scale-105 relative z-10 brightness-95" />
+                         <div className="absolute inset-0 border-[12px] border-white rounded-[3rem] z-20 pointer-events-none"></div>
+                         <div className="absolute top-0 left-0 w-full h-1.5 bg-orange-500/80 shadow-[0_0_15px_rgba(255,115,0,1)] animate-scan z-30"></div>
                       </div>
-                      <div className="flex items-center justify-center gap-4 text-orange-500 animate-pulse">
-                         <Activity size={18} />
-                         <span className="text-[9px] font-black uppercase tracking-[0.4em] italic text-glow">Aguardando Pareamento...</span>
+
+                      <div className="flex flex-col items-center gap-4">
+                         <div className="flex items-center gap-4 text-orange-500 animate-pulse">
+                            <Activity size={20} />
+                            <span className="text-[10px] font-black uppercase tracking-[0.5em] italic text-glow">Aguardando Handshake...</span>
+                         </div>
+                         <p className="text-[8px] font-bold text-gray-600 uppercase tracking-widest max-w-[200px]">Mantenha o aparelho conectado à internet.</p>
                       </div>
                    </motion.div>
                 </motion.div>
@@ -406,15 +417,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
            </AnimatePresence>
 
            {(isLoadingQR || isCreatingInstance) && (
-             <div className="fixed inset-0 z-[140] bg-black/70 backdrop-blur-xl flex items-center justify-center">
-                <div className="text-center space-y-8 glass p-20 rounded-[5rem] border-orange-500/20 shadow-2xl">
-                   <div className="relative">
-                     <Loader2 className="animate-spin text-orange-500 mx-auto" size={80} />
-                     <Zap className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-orange-500 animate-pulse" size={24} />
+             <div className="fixed inset-0 z-[140] bg-black/90 backdrop-blur-3xl flex items-center justify-center">
+                <div className="text-center space-y-10 glass p-24 rounded-[6rem] border-orange-500/20 shadow-2xl max-w-xl">
+                   <div className="relative inline-block">
+                     <Loader2 className="animate-spin text-orange-500 mx-auto" size={120} strokeWidth={1} />
+                     <Zap className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-orange-500 animate-pulse" size={40} />
                    </div>
-                   <div className="space-y-2">
-                     <p className="text-[14px] font-black uppercase tracking-[0.6em] text-orange-500 animate-pulse italic text-glow">Sincronizando Cluster v2.3.7</p>
-                     <p className="text-[8px] font-black uppercase tracking-[0.4em] text-gray-600 italic">Validando Handshake Neural...</p>
+                   <div className="space-y-4">
+                     <p className="text-[20px] font-black uppercase tracking-[0.8em] text-orange-500 animate-pulse italic text-glow">ENGINE v2.3.7</p>
+                     <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-600 italic leading-loose">Sincronizando 'syncFullHistory'...<br/>Injetando Headers de Segurança...</p>
                    </div>
                 </div>
              </div>
@@ -423,9 +434,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       </main>
 
       <style>{`
-        @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
-        .animate-scan { animation: scan 2.5s linear infinite; }
-        .text-glow { text-shadow: 0 0 20px rgba(255, 115, 0, 0.4); }
+        @keyframes scan { 
+          0% { top: 0%; opacity: 0; } 
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; } 
+        }
+        .animate-scan { animation: scan 4s linear infinite; }
+        .text-glow { text-shadow: 0 0 30px rgba(255, 115, 0, 0.6); }
       `}</style>
     </div>
   );
