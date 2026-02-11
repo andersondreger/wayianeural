@@ -86,7 +86,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       setInstances(mapped);
 
-      // SÓ FECHA O MODAL SE CONECTAR DE FATO
       if (isWaitingConnection.current) {
         const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
@@ -121,20 +120,21 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (isCreatingInstance) return;
     setIsCreatingInstance(true);
     
-    // Nome limpo para evitar problemas de URL
     const autoName = `neural_${Math.random().toString(36).substring(7)}`;
+    const randomToken = Math.random().toString(36).substring(2, 15);
     
     try {
       /** 
-       * CAUSA RAIZ - SCHEMA v2.3.7 RESOLVIDO:
-       * - integration: "whatsapp" (Lower case obrigatório)
-       * - syncFullHistory: false (Property obrigatória no nível raiz)
+       * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
+       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase para evitar erro 'Integração Inválida')
+       * 2. token: randomToken (Algumas instalações rejeitam token vazio com 400)
+       * 3. syncFullHistory: false (Property obrigatória exigida pelo class-validator da API)
        */
       const createBody = { 
         instanceName: autoName, 
-        token: "", 
+        token: randomToken, 
         qrcode: true, 
-        integration: "whatsapp", 
+        integration: "WHATSAPP", 
         rejectCall: false,
         groupsIgnore: false,
         alwaysOnline: true,
@@ -153,23 +153,21 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
-        
-        // Extrai o QR do retorno ou força busca manual com delay para persistência
         const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
         
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Se não veio no create, aguarda o banco de dados e busca
-          setTimeout(() => getQRCodeManual(autoName), 1200);
+          setTimeout(() => getQRCodeManual(autoName), 1500);
         }
         await fetchInstances();
       } else {
-        const errorMsg = data.message || (data.error && data.error[0]) || "Erro de Validação v2.3.7";
-        alert(`Erro de Handshake Evolution: ${errorMsg}`);
+        // Captura detalhada de erro para debug do usuário
+        const errorDetail = Array.isArray(data.error) ? data.error.join(', ') : (data.message || "Erro de Validação");
+        alert(`Erro de Handshake v2.3.7: ${errorDetail}`);
       }
     } catch (e) {
-      alert("Falha Crítica na Comunicação com o Cluster.");
+      alert("Falha Crítica na Comunicação: Verifique se a URL da API está acessível.");
     } finally {
       setIsCreatingInstance(false);
     }
@@ -184,18 +182,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       if (data.base64) {
         setQrCodeData({ base64: data.base64, name: instanceName });
       } else {
-        // Retry se a imagem ainda não estiver pronta
-        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 1500);
+        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2000);
       }
     } catch (e) {
-      console.error("Erro ao buscar QR Code manual");
+      console.error("Erro QR manual");
     } finally {
       setIsLoadingQR(false);
     }
   };
 
   const deleteInstance = async (instanceName: string) => {
-    if (!confirm(`Deseja remover o terminal ${instanceName}?`)) return;
+    if (!confirm(`Remover terminal ${instanceName}?`)) return;
     await fetch(`${EVOLUTION_URL}/instance/delete/${instanceName}`, { method: 'DELETE', headers: getHeaders() });
     activatedInstances.current.delete(instanceName);
     await fetchInstances();
@@ -386,7 +383,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
              )}
            </AnimatePresence>
 
-           {/* MODAL QR CODE - BLINDADO */}
            <AnimatePresence>
              {qrCodeData && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[130] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-6">
@@ -425,7 +421,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    </div>
                    <div className="space-y-4">
                      <p className="text-[20px] font-black uppercase tracking-[0.8em] text-orange-500 animate-pulse italic text-glow">ENGINE v2.3.7</p>
-                     <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-600 italic leading-loose">Sincronizando 'syncFullHistory'...<br/>Injetando Headers de Segurança...</p>
+                     <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-600 italic leading-loose">Sincronizando 'syncFullHistory'...<br/>Validando Integração WHATSAPP...</p>
                    </div>
                 </div>
              </div>
