@@ -124,9 +124,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     
     try {
       /** 
-       * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
-       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase para evitar 'Integração Inválida')
-       * 2. syncFullHistory: false (Obrigatório na RAIZ para evitar 'instance requires property syncFullHistory')
+       * RESOLUÇÃO DEFINITIVA v2.3.7:
+       * 1. integration: "WHATSAPP" (Obrigatório maiúsculo para não dar 'Integração Inválida')
+       * 2. syncFullHistory: false (Obrigatório na raiz para não dar 'requires property syncFullHistory')
        */
       const createBody = { 
         instanceName: autoName, 
@@ -149,47 +149,46 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
-        // Na v2.3.7 o QR pode vir em caminhos diferentes dependendo da config do global
-        const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64 || (data.data && data.data.qrcode && data.data.qrcode.base64);
+        // Tenta capturar o QR do body de criação ou do fallback manual
+        const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
         
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Se não vier no body, força a busca manual imediatamente
+          // Se o servidor não retornar o base64 de imediato, iniciamos o scanner manual
           getQRCodeManual(autoName);
         }
         await fetchInstances();
       } else {
-        // CORREÇÃO DO ERRO 'B': Parser inteligente para extrair a mensagem real
-        const rawMsg = data.message || data.error || data.response?.message || "Bad Request";
-        const errorMsg = Array.isArray(rawMsg) ? rawMsg.join(', ') : String(rawMsg);
-        alert(`Erro Crítico Evolution: ${errorMsg}`);
+        // Formata o erro para mostrar a causa real (integração ou campo faltante)
+        const errorDetail = data.message || data.error || "Bad Request v2.3.7";
+        const finalMsg = Array.isArray(errorDetail) ? errorDetail.join(' | ') : String(errorDetail);
+        alert(`Erro na Evolution Engine: ${finalMsg}`);
       }
     } catch (e) {
-      alert("Falha ao contatar o cluster Evolution API.");
+      alert("Falha Crítica ao se comunicar com a API.");
     } finally {
       setIsCreatingInstance(false);
     }
   };
 
   const getQRCodeManual = async (instanceName: string, retry = 0) => {
-    if (retry > 8) return; 
+    if (retry > 10) return; // Limite de 20 segundos de tentativa
     setIsLoadingQR(true);
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
       const data = await res.json();
       
-      // Alguns ambientes retornam a string direta, outros um objeto com base64
-      const qrBase64 = data.base64 || data.qrcode?.base64 || (typeof data === 'string' && data.includes('base64') ? data : null);
+      const base64 = data.base64 || data.qrcode?.base64;
       
-      if (qrBase64) {
-        setQrCodeData({ base64: qrBase64, name: instanceName });
+      if (base64) {
+        setQrCodeData({ base64, name: instanceName });
       } else {
-        // Retry progressivo para dar tempo ao servidor de gerar o buffer da imagem
+        // Se a imagem ainda não estiver pronta no cache do servidor, tenta novamente em 2s
         setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2000);
       }
     } catch (e) {
-      console.error("Tentativa de QR Falhou");
+      console.error("Erro ao buscar QR manual");
     } finally {
       setIsLoadingQR(false);
     }
