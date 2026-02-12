@@ -91,7 +91,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         if (currentTarget && currentTarget.status === 'CONNECTED') {
           setQrCodeData(null);
           isWaitingConnection.current = null;
-          activatePostgres(currentTarget.name);
         }
       }
     } catch (e) {
@@ -125,22 +124,20 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     
     try {
       /** 
-       * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
-       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase para evitar erro 'Integração Inválida')
-       * 2. token: randomToken (Algumas instalações rejeitam token vazio com 400)
-       * 3. syncFullHistory: false (Property obrigatória exigida pelo class-validator da API)
+       * HANDSHAKE v2.3.7 - REQUISITOS OBRIGATÓRIOS:
+       * 1. integration: "WHATSAPP" (Uppercase obrigatório na 2.3.7)
+       * 2. token: Necessário ser string válida para middleware de auth
+       * 3. syncFullHistory: Campo raiz obrigatório pelo validador Prisma/DTO
        */
       const createBody = { 
         instanceName: autoName, 
         token: randomToken, 
-        qrcode: true, 
-        integration: "WHATSAPP", 
-        rejectCall: false,
-        groupsIgnore: false,
-        alwaysOnline: true,
+        integration: "WHATSAPP",
+        qrcode: true,
+        syncFullHistory: false,
         readMessages: true,
         readStatus: false,
-        syncFullHistory: false 
+        alwaysOnline: true
       };
 
       const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
@@ -158,16 +155,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          setTimeout(() => getQRCodeManual(autoName), 1500);
+          // Fallback para buscar o QR se o banco demorar a responder
+          setTimeout(() => getQRCodeManual(autoName), 2000);
         }
         await fetchInstances();
       } else {
-        // Captura detalhada de erro para debug do usuário
-        const errorDetail = Array.isArray(data.error) ? data.error.join(', ') : (data.message || "Erro de Validação");
-        alert(`Erro de Handshake v2.3.7: ${errorDetail}`);
+        // CORREÇÃO DO ERRO 'B': Pegar a mensagem real do servidor
+        const errorMsg = data.message || (Array.isArray(data.error) ? data.error.join(', ') : data.error) || "Bad Request 400";
+        alert(`Erro de Handshake: ${errorMsg}`);
       }
     } catch (e) {
-      alert("Falha Crítica na Comunicação: Verifique se a URL da API está acessível.");
+      alert("Falha de Conexão: O servidor da API está offline ou bloqueando a requisição.");
     } finally {
       setIsCreatingInstance(false);
     }
@@ -182,7 +180,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       if (data.base64) {
         setQrCodeData({ base64: data.base64, name: instanceName });
       } else {
-        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2000);
+        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2500);
       }
     } catch (e) {
       console.error("Erro QR manual");
@@ -318,7 +316,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex items-center justify-between border-b border-white/5 pb-12">
                         <div>
                            <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
-                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic text-glow">Evolution v2.3.7 Engine | Handshake Postgres v2</p>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic text-glow">Evolution v2.3.7 Engine | Handshake Strict</p>
                         </div>
                         <div className="flex gap-4">
                            <button onClick={fetchInstances} className="p-4 glass rounded-2xl text-orange-500 hover:scale-110 transition-all"><RefreshCw size={20}/></button>
@@ -405,7 +403,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             <Activity size={20} />
                             <span className="text-[10px] font-black uppercase tracking-[0.5em] italic text-glow">Aguardando Handshake...</span>
                          </div>
-                         <p className="text-[8px] font-bold text-gray-600 uppercase tracking-widest max-w-[200px]">Mantenha o aparelho conectado à internet.</p>
                       </div>
                    </motion.div>
                 </motion.div>
@@ -421,7 +418,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                    </div>
                    <div className="space-y-4">
                      <p className="text-[20px] font-black uppercase tracking-[0.8em] text-orange-500 animate-pulse italic text-glow">ENGINE v2.3.7</p>
-                     <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-600 italic leading-loose">Sincronizando 'syncFullHistory'...<br/>Validando Integração WHATSAPP...</p>
+                     <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-600 italic leading-loose">Validando Integração WHATSAPP (Strict)...<br/>Sincronizando com Cluster Neural...</p>
                    </div>
                 </div>
              </div>
