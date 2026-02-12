@@ -72,7 +72,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         }
 
         return {
-          id: core.instanceId || core.id || name,
+          id: core.id || core.instanceId || name,
           name: name,
           status: isConnected ? 'CONNECTED' : (s === 'connecting' ? 'CONNECTING' : 'DISCONNECTED'),
           phone: core.ownerJid ? core.ownerJid.split('@')[0] : 'Off-line',
@@ -86,6 +86,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       setInstances(mapped);
 
+      // Fecha o modal apenas se a conexão for confirmada pela API
       if (isWaitingConnection.current) {
         const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
@@ -94,7 +95,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         }
       }
     } catch (e) {
-      console.error('Fetch Error:', e);
+      console.error('Polling Error:', e);
     }
   };
 
@@ -124,10 +125,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     
     try {
       /** 
-       * HANDSHAKE v2.3.7 - REQUISITOS OBRIGATÓRIOS:
-       * 1. integration: "WHATSAPP" (Uppercase obrigatório na 2.3.7)
-       * 2. token: Necessário ser string válida para middleware de auth
-       * 3. syncFullHistory: Campo raiz obrigatório pelo validador Prisma/DTO
+       * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
+       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase)
+       * 2. syncFullHistory: false (Obrigatório no primeiro nível para evitar erro 'instance requires property syncFullHistory')
        */
       const createBody = { 
         instanceName: autoName, 
@@ -155,24 +155,25 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Fallback para buscar o QR se o banco demorar a responder
-          setTimeout(() => getQRCodeManual(autoName), 2000);
+          // Fallback recursivo se o QR não vier no body inicial
+          setTimeout(() => getQRCodeManual(autoName), 1500);
         }
         await fetchInstances();
       } else {
-        // CORREÇÃO DO ERRO 'B': Pegar a mensagem real do servidor
-        const errorMsg = data.message || (Array.isArray(data.error) ? data.error.join(', ') : data.error) || "Bad Request 400";
-        alert(`Erro de Handshake: ${errorMsg}`);
+        // Correção do Erro 'B': Tratamento adequado da mensagem de erro
+        const rawError = data.message || data.error || "Erro Desconhecido";
+        const errorMsg = Array.isArray(rawError) ? rawError.join(', ') : String(rawError);
+        alert(`Erro de Handshake v2.3.7: ${errorMsg}`);
       }
     } catch (e) {
-      alert("Falha de Conexão: O servidor da API está offline ou bloqueando a requisição.");
+      alert("Falha de Conexão Crítica com o Servidor Evolution.");
     } finally {
       setIsCreatingInstance(false);
     }
   };
 
   const getQRCodeManual = async (instanceName: string, retry = 0) => {
-    if (retry > 3) return;
+    if (retry > 6) return; // Limite de tentativas de 15 segundos
     setIsLoadingQR(true);
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
@@ -183,7 +184,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2500);
       }
     } catch (e) {
-      console.error("Erro QR manual");
+      console.error("Tentativa de QR Falhou");
     } finally {
       setIsLoadingQR(false);
     }
