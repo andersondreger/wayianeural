@@ -86,7 +86,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       setInstances(mapped);
 
-      // Fecha o modal apenas se a conexão for confirmada pela API
       if (isWaitingConnection.current) {
         const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
@@ -126,8 +125,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     try {
       /** 
        * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
-       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase)
-       * 2. syncFullHistory: false (Obrigatório no primeiro nível para evitar erro 'instance requires property syncFullHistory')
+       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase para evitar 'Integração Inválida')
+       * 2. syncFullHistory: false (Obrigatório na RAIZ para evitar 'instance requires property syncFullHistory')
        */
       const createBody = { 
         instanceName: autoName, 
@@ -150,38 +149,44 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
-        const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
+        // Na v2.3.7 o QR pode vir em caminhos diferentes dependendo da config do global
+        const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64 || (data.data && data.data.qrcode && data.data.qrcode.base64);
         
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Fallback recursivo se o QR não vier no body inicial
-          setTimeout(() => getQRCodeManual(autoName), 1500);
+          // Se não vier no body, força a busca manual imediatamente
+          getQRCodeManual(autoName);
         }
         await fetchInstances();
       } else {
-        // Correção do Erro 'B': Tratamento adequado da mensagem de erro
-        const rawError = data.message || data.error || "Erro Desconhecido";
-        const errorMsg = Array.isArray(rawError) ? rawError.join(', ') : String(rawError);
-        alert(`Erro de Handshake v2.3.7: ${errorMsg}`);
+        // CORREÇÃO DO ERRO 'B': Parser inteligente para extrair a mensagem real
+        const rawMsg = data.message || data.error || data.response?.message || "Bad Request";
+        const errorMsg = Array.isArray(rawMsg) ? rawMsg.join(', ') : String(rawMsg);
+        alert(`Erro Crítico Evolution: ${errorMsg}`);
       }
     } catch (e) {
-      alert("Falha de Conexão Crítica com o Servidor Evolution.");
+      alert("Falha ao contatar o cluster Evolution API.");
     } finally {
       setIsCreatingInstance(false);
     }
   };
 
   const getQRCodeManual = async (instanceName: string, retry = 0) => {
-    if (retry > 6) return; // Limite de tentativas de 15 segundos
+    if (retry > 8) return; 
     setIsLoadingQR(true);
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
       const data = await res.json();
-      if (data.base64) {
-        setQrCodeData({ base64: data.base64, name: instanceName });
+      
+      // Alguns ambientes retornam a string direta, outros um objeto com base64
+      const qrBase64 = data.base64 || data.qrcode?.base64 || (typeof data === 'string' && data.includes('base64') ? data : null);
+      
+      if (qrBase64) {
+        setQrCodeData({ base64: qrBase64, name: instanceName });
       } else {
-        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2500);
+        // Retry progressivo para dar tempo ao servidor de gerar o buffer da imagem
+        setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2000);
       }
     } catch (e) {
       console.error("Tentativa de QR Falhou");
@@ -404,6 +409,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             <Activity size={20} />
                             <span className="text-[10px] font-black uppercase tracking-[0.5em] italic text-glow">Aguardando Handshake...</span>
                          </div>
+                         <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest max-w-[200px]">Aponte a câmera do seu WhatsApp para o código acima para iniciar a sincronização neural.</p>
                       </div>
                    </motion.div>
                 </motion.div>
