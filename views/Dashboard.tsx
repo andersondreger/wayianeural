@@ -86,7 +86,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       setInstances(mapped);
 
-      // Verificação de Handshake concluído para fechar modal de QR
       if (isWaitingConnection.current) {
         const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
@@ -101,10 +100,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const activatePostgres = async (instanceName: string) => {
     try {
+      // Normalização WHATSAPP aqui também para evitar desvios de configuração
       const repairPayload = { 
-        database: true, save: true, syncContacts: true, syncMessages: true,
-        syncGroups: false, rejectCall: false, groupsIgnore: false,
-        alwaysOnline: true, readMessages: true, readStatus: false,
+        database: true, 
+        save: true, 
+        syncContacts: true, 
+        syncMessages: true,
+        syncGroups: false, 
+        rejectCall: false, 
+        groupsIgnore: false,
+        alwaysOnline: true, 
+        readMessages: true, 
+        readStatus: false,
         syncFullHistory: false 
       };
       await fetch(`${EVOLUTION_URL}/settings/set/${instanceName}`, {
@@ -120,25 +127,27 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (isCreatingInstance) return;
     setIsCreatingInstance(true);
     
-    // Nomes aleatórios curtos para evitar colisões
     const autoName = `neural_${Math.random().toString(36).substring(7)}`;
     const randomToken = Math.random().toString(36).substring(2, 15);
     
     try {
       /** 
-       * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
-       * 1. integration: "WHATSAPP" (Obrigatório maiúsculo)
-       * 2. syncFullHistory: false (Obrigatório na raiz do JSON)
+       * RECONSTRUÇÃO TOTAL DO PAYLOAD PARA v2.3.7:
+       * 1. integration: "WHATSAPP" (Obrigatório em Uppercase)
+       * 2. syncFullHistory: false (Obrigatório na RAIZ para evitar Bad Request)
+       * 3. Campos extras mandatórios para evitar falha de validação DTO
        */
       const createBody = { 
         instanceName: autoName, 
         token: randomToken, 
-        integration: "WHATSAPP",
+        integration: "WHATSAPP", // RIGOROSAMENTE MAIÚSCULO
         qrcode: true,
         syncFullHistory: false,
         readMessages: true,
         readStatus: false,
-        alwaysOnline: true
+        alwaysOnline: true,
+        rejectCall: false,
+        groupsIgnore: false
       };
 
       const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
@@ -151,44 +160,51 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
-        // Tenta extrair QR das variadas formas que a Evolution retorna dependendo do Global
+        
+        // Verifica se o QR já veio no create (comum em algumas configs de v2)
         const b64 = data.qrcode?.base64 || 
                     data.instance?.qrcode?.base64 || 
-                    (data.data && data.data.qrcode && data.data.qrcode.base64);
+                    (data.data?.qrcode?.base64);
         
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Se não vier no body, força o polling manual
-          getQRCodeManual(autoName);
+          // Se não vier, chama o endpoint de conexão forçada para gerar o QR
+          await getQRCodeManual(autoName);
         }
         await fetchInstances();
       } else {
-        // Parser de Erro Robusto (Evita o Erro 'B')
-        const rawMsg = data.message || data.error || data.response?.message || "Bad Request";
-        const errorMsg = Array.isArray(rawMsg) ? rawMsg.join(', ') : String(rawMsg);
-        alert(`Erro Crítico Evolution: ${errorMsg}`);
+        // EXIBIÇÃO DE ERRO REAL: Captura a mensagem do validador da API
+        const errorDetail = data.message || data.error || data.response?.data?.message || "Erro de Handshake";
+        const finalMsg = Array.isArray(errorDetail) ? errorDetail.join(' | ') : String(errorDetail);
+        alert(`BAD REQUEST v2.3.7: ${finalMsg}`);
       }
     } catch (e) {
-      alert("Falha de Conexão: O servidor da Evolution não respondeu ao Handshake.");
+      alert("Falha Crítica: Servidor Evolution não respondeu ao Handshake.");
     } finally {
       setIsCreatingInstance(false);
     }
   };
 
   const getQRCodeManual = async (instanceName: string, retry = 0) => {
-    if (retry > 10) return; // Limite de 20 segundos tentando gerar o QR
+    // Aumentei o limite de tentativas para 15 (30 segundos) para instâncias lentas
+    if (retry > 15) return; 
+    
     setIsLoadingQR(true);
     try {
-      const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
+      // Endpoint connect é o responsável por forçar a geração do QR Code se ele não existir
+      const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { 
+        headers: getHeaders() 
+      });
       const data = await res.json();
       
-      const qrBase64 = data.base64 || data.qrcode?.base64 || (typeof data === 'string' && data.includes('base64') ? data : null);
+      // A v2.3.7 pode retornar o QR Code direto no campo base64 ou dentro de um objeto qrcode
+      const base64 = data.base64 || data.qrcode?.base64 || (data.data?.qrcode?.base64);
       
-      if (qrBase64) {
-        setQrCodeData({ base64: qrBase64, name: instanceName });
+      if (base64) {
+        setQrCodeData({ base64: base64, name: instanceName });
       } else {
-        // Espera 2 segundos e tenta novamente (tempo do servidor gerar a imagem)
+        // Retry progressivo: espera 2 segundos antes de tentar gerar o QR novamente
         setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2000);
       }
     } catch (e) {
@@ -200,7 +216,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const deleteInstance = async (instanceName: string) => {
     if (!confirm(`Remover terminal ${instanceName}?`)) return;
-    await fetch(`${EVOLUTION_URL}/instance/delete/${instanceName}`, { method: 'DELETE', headers: getHeaders() });
+    await fetch(`${EVOLUTION_URL}/instance/delete/${instanceName}`, { 
+      method: 'DELETE', 
+      headers: getHeaders() 
+    });
     activatedInstances.current.delete(instanceName);
     await fetchInstances();
   };
