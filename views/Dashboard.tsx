@@ -86,6 +86,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       setInstances(mapped);
 
+      // Verificação de Handshake concluído para fechar modal de QR
       if (isWaitingConnection.current) {
         const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
@@ -119,14 +120,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     if (isCreatingInstance) return;
     setIsCreatingInstance(true);
     
+    // Nomes aleatórios curtos para evitar colisões
     const autoName = `neural_${Math.random().toString(36).substring(7)}`;
     const randomToken = Math.random().toString(36).substring(2, 15);
     
     try {
       /** 
-       * RESOLUÇÃO DEFINITIVA v2.3.7:
-       * 1. integration: "WHATSAPP" (Obrigatório maiúsculo para não dar 'Integração Inválida')
-       * 2. syncFullHistory: false (Obrigatório na raiz para não dar 'requires property syncFullHistory')
+       * RESOLUÇÃO DA CAUSA RAIZ v2.3.7:
+       * 1. integration: "WHATSAPP" (Obrigatório maiúsculo)
+       * 2. syncFullHistory: false (Obrigatório na raiz do JSON)
        */
       const createBody = { 
         instanceName: autoName, 
@@ -149,46 +151,48 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
-        // Tenta capturar o QR do body de criação ou do fallback manual
-        const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
+        // Tenta extrair QR das variadas formas que a Evolution retorna dependendo do Global
+        const b64 = data.qrcode?.base64 || 
+                    data.instance?.qrcode?.base64 || 
+                    (data.data && data.data.qrcode && data.data.qrcode.base64);
         
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Se o servidor não retornar o base64 de imediato, iniciamos o scanner manual
+          // Se não vier no body, força o polling manual
           getQRCodeManual(autoName);
         }
         await fetchInstances();
       } else {
-        // Formata o erro para mostrar a causa real (integração ou campo faltante)
-        const errorDetail = data.message || data.error || "Bad Request v2.3.7";
-        const finalMsg = Array.isArray(errorDetail) ? errorDetail.join(' | ') : String(errorDetail);
-        alert(`Erro na Evolution Engine: ${finalMsg}`);
+        // Parser de Erro Robusto (Evita o Erro 'B')
+        const rawMsg = data.message || data.error || data.response?.message || "Bad Request";
+        const errorMsg = Array.isArray(rawMsg) ? rawMsg.join(', ') : String(rawMsg);
+        alert(`Erro Crítico Evolution: ${errorMsg}`);
       }
     } catch (e) {
-      alert("Falha Crítica ao se comunicar com a API.");
+      alert("Falha de Conexão: O servidor da Evolution não respondeu ao Handshake.");
     } finally {
       setIsCreatingInstance(false);
     }
   };
 
   const getQRCodeManual = async (instanceName: string, retry = 0) => {
-    if (retry > 10) return; // Limite de 20 segundos de tentativa
+    if (retry > 10) return; // Limite de 20 segundos tentando gerar o QR
     setIsLoadingQR(true);
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
       const data = await res.json();
       
-      const base64 = data.base64 || data.qrcode?.base64;
+      const qrBase64 = data.base64 || data.qrcode?.base64 || (typeof data === 'string' && data.includes('base64') ? data : null);
       
-      if (base64) {
-        setQrCodeData({ base64, name: instanceName });
+      if (qrBase64) {
+        setQrCodeData({ base64: qrBase64, name: instanceName });
       } else {
-        // Se a imagem ainda não estiver pronta no cache do servidor, tenta novamente em 2s
+        // Espera 2 segundos e tenta novamente (tempo do servidor gerar a imagem)
         setTimeout(() => getQRCodeManual(instanceName, retry + 1), 2000);
       }
     } catch (e) {
-      console.error("Erro ao buscar QR manual");
+      console.error("Tentativa de QR Falhou");
     } finally {
       setIsLoadingQR(false);
     }
