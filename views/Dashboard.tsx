@@ -8,7 +8,7 @@ import {
   Server, ShieldCheck, Info, MessageCircle, MoreVertical,
   Plus, Trash2, Power, Wifi, WifiOff, X, CheckCircle2,
   UserCheck, ExternalLink, AlertTriangle, Users, MailCheck,
-  Terminal, ShieldAlert
+  Terminal, ShieldAlert, Filter
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
@@ -51,33 +51,31 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       const data = await res.json();
       const raw = Array.isArray(data) ? data : (data.instances || data.data || []);
       
-      const mapped = await Promise.all(raw.map(async (i: any) => {
+      const mapped = raw.map((i: any) => {
         const core = i.instance || i;
         const name = core.instanceName || core.name;
         const s = (core.connectionStatus || core.status || "").toLowerCase();
         const isConnected = s === 'open' || s === 'connected';
         
-        if (isConnected && !activatedInstances.current.has(name)) {
-           await activatePostgres(name);
-        }
-
         return {
           id: core.id || core.instanceId || name,
           name: name,
           status: isConnected ? 'CONNECTED' : (s === 'connecting' ? 'CONNECTING' : 'DISCONNECTED'),
           phone: core.ownerJid ? core.ownerJid.split('@')[0] : 'Off-line',
           profilePicUrl: core.profilePicUrl || "",
-          metrics: {
-            contacts: 0, // Simplificado para performance inicial
-            messages: 0
-          }
         };
-      }));
+      });
       
       setInstances(mapped);
 
+      // Auto-seleção de instância se houver apenas uma conectada
+      const connected = mapped.filter((inst: any) => inst.status === 'CONNECTED');
+      if (connected.length === 1 && !selectedInstance) {
+        setSelectedInstance(connected[0]);
+      }
+
       if (isWaitingConnection.current) {
-        const currentTarget = mapped.find(inst => inst.name === isWaitingConnection.current);
+        const currentTarget = mapped.find((inst: any) => inst.name === isWaitingConnection.current);
         if (currentTarget && currentTarget.status === 'CONNECTED') {
           setQrCodeData(null);
           isWaitingConnection.current = null;
@@ -85,6 +83,40 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       }
     } catch (e) {
       console.error('Polling Error:', e);
+    }
+  };
+
+  const loadContacts = async () => {
+    if (!selectedInstance || selectedInstance.status !== 'CONNECTED') return;
+    
+    setIsLoadingContacts(true);
+    try {
+      // Forçamos a ativação do Postgres antes de buscar, para garantir que o banco esteja populado
+      await activatePostgres(selectedInstance.name);
+
+      const res = await fetch(`${EVOLUTION_URL}/contact/findMany/${selectedInstance.name}`, { 
+        headers: getHeaders() 
+      });
+      
+      if (!res.ok) throw new Error("Erro ao buscar contatos");
+      
+      const data = await res.json();
+      console.log("Contatos brutos recebidos:", data);
+
+      // Parsing multi-nível para v2.3.7
+      const list = Array.isArray(data) ? data : (data.data || data.contacts || []);
+      
+      // Filtrar apenas JIDs individuais (evitar grupos @g.us)
+      const filtered = list.filter((c: any) => {
+        const jid = c.id || c.remoteJid || "";
+        return jid && !jid.includes('@g.us');
+      });
+
+      setContacts(filtered);
+    } catch (e) {
+      console.error("Falha ao carregar contatos:", e);
+    } finally {
+      setIsLoadingContacts(false);
     }
   };
 
@@ -111,14 +143,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setApiError(null);
     
     const autoName = `neural_${Math.random().toString(36).substring(7)}`;
-    const randomToken = "wayflow_neural_token_" + Math.random().toString(36).substring(7);
+    const randomToken = "wayflow_" + Math.random().toString(36).substring(7);
     
     try {
-      /** 
-       * 🚀 SOLUÇÃO PARA O ERRO "INTEGRAÇÃO INVÁLIDA" 🚀
-       * Na v2.3.7, o campo integration deve ser WHATSAPP-BAILEYS para builds específicas
-       * ou WHATSAPP para outras. Testamos WHATSAPP-BAILEYS como primário.
-       */
       const createBody = { 
         instanceName: autoName, 
         token: randomToken, 
@@ -136,31 +163,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       
       if (res.ok || res.status === 201) {
         isWaitingConnection.current = autoName;
-        // Tenta pegar o QR que vem no create
         const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
         
         if (b64) {
           setQrCodeData({ base64: b64, name: autoName });
         } else {
-          // Se não vier, FORÇA a conexão para gerar o QR
           await forceQRGeneration(autoName);
         }
         await fetchInstances();
       } else {
-        // Fallback para "WHATSAPP" simples se "WHATSAPP-BAILEYS" falhar
-        const retryRes = await fetch(`${EVOLUTION_URL}/instance/create`, {
-          method: 'POST',
-          headers: getHeaders(),
-          body: JSON.stringify({ ...createBody, integration: "WHATSAPP" })
-        });
-        const retryData = await retryRes.json();
-        
-        if (retryRes.ok) {
-           isWaitingConnection.current = autoName;
-           await forceQRGeneration(autoName);
-        } else {
-           setApiError(JSON.stringify(retryData, null, 2));
-        }
+        setApiError(JSON.stringify(data, null, 2));
       }
     } catch (e) {
       setApiError("Falha de rede com o servidor Evolution.");
@@ -172,15 +184,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const forceQRGeneration = async (instanceName: string) => {
     setIsLoadingQR(true);
     try {
-      // O endpoint connect OBRIGA o servidor a iniciar o Baileys e gerar o QR Code
       const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers: getHeaders() });
       const data = await res.json();
       const base64 = data.base64 || data.qrcode?.base64 || (data.data?.qrcode?.base64);
-      
       if (base64) {
         setQrCodeData({ base64: base64, name: instanceName });
       } else {
-        // Se ainda não gerou, tenta de novo em 3 segundos (tempo de boot da instância)
         setTimeout(() => forceQRGeneration(instanceName), 3000);
       }
     } catch (e) {
@@ -199,9 +208,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   useEffect(() => {
     fetchInstances();
-    const timer = setInterval(fetchInstances, 8000);
+    const timer = setInterval(fetchInstances, 10000);
     return () => clearInterval(timer);
   }, []);
+
+  // Carregar contatos sempre que a instância selecionada mudar no Inbox
+  useEffect(() => {
+    if (activeTab === 'atendimento') {
+      loadContacts();
+    }
+  }, [selectedInstance?.name, activeTab]);
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -247,74 +263,125 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             </button>
             <div className="flex flex-col">
               <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-white italic text-glow">WayFlow Neural v3.7</h2>
-              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic">Evolution Strict DTO Mode</span>
+              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic">Engine de Atendimento Ativa</span>
             </div>
           </div>
           <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs uppercase">{user.name[0]}</div>
         </header>
 
-        <div className="flex-1 flex overflow-hidden p-12 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 flex overflow-hidden">
            <AnimatePresence mode="wait">
-             {activeTab === 'instancias' ? (
-               <div className="max-w-6xl mx-auto w-full space-y-12">
-                  <div className="flex items-center justify-between">
-                     <div>
-                        <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
-                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Sistema de Handshake Baileys v2.3.7</p>
-                     </div>
-                     <button onClick={handleAutoCreate} disabled={isCreatingInstance} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
-                        {isCreatingInstance ? <Loader2 className="animate-spin" size={16}/> : <Plus size={16} />} 
-                        Nova Instância
-                     </button>
-                  </div>
-
-                  {apiError && (
-                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-6 bg-red-500/10 border border-red-500/20 rounded-3xl space-y-4">
-                       <div className="flex items-center gap-3 text-red-500">
-                          <ShieldAlert size={20} />
-                          <span className="text-[10px] font-black uppercase tracking-widest">Erro no Handshake do Servidor</span>
-                       </div>
-                       <pre className="text-[9px] text-red-400 font-mono overflow-x-auto bg-black/40 p-4 rounded-xl">{apiError}</pre>
-                    </motion.div>
-                  )}
-
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                     {instances.map(inst => (
-                        <div key={inst.id} className="glass p-8 rounded-[2.5rem] border-white/5 space-y-8 relative overflow-hidden group hover:border-orange-500/40 transition-all shadow-2xl">
-                           <div className="flex items-center justify-between relative z-10">
-                              <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 ${inst.status === 'CONNECTED' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
-                                 {inst.status === 'CONNECTED' ? <Wifi size={10} className="animate-pulse" /> : <WifiOff size={10} />}
-                                 {inst.status}
-                              </div>
-                              <button onClick={() => deleteInstance(inst.name)} className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
-                           </div>
-                           
-                           <div className="flex items-center gap-6 relative z-10">
-                              <div className="w-16 h-16 rounded-3xl bg-black border border-white/5 flex items-center justify-center text-orange-500">
-                                 <Smartphone size={24} className="opacity-40" />
-                              </div>
-                              <div>
-                                 <h4 className="text-[16px] font-black uppercase italic text-white">{inst.name}</h4>
-                                 <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">{inst.phone}</p>
-                              </div>
-                           </div>
-
-                           <div className="pt-2">
-                              {inst.status !== 'CONNECTED' ? (
-                                <button onClick={() => forceQRGeneration(inst.name)} className="w-full py-5 bg-orange-500/10 border border-orange-500/20 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] text-orange-500 hover:bg-orange-500 hover:text-white transition-all italic flex items-center justify-center gap-3"><Scan size={16} /> Ver QR Code</button>
-                              ) : (
-                                <div className="w-full py-5 bg-green-500/10 border border-green-500/20 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] text-green-500 text-center italic flex items-center justify-center gap-3"><CheckCircle2 size={16}/> Sincronizado</div>
-                              )}
-                           </div>
+             {activeTab === 'atendimento' ? (
+                <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex overflow-hidden">
+                  <div className="w-80 md:w-96 border-r border-white/5 flex flex-col bg-black/40 backdrop-blur-3xl">
+                     <div className="p-8 border-b border-white/5 space-y-6">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-2xl font-black uppercase italic tracking-tighter text-glow">Neural <span className="text-orange-500">Inbox.</span></h3>
+                          <button onClick={loadContacts} disabled={isLoadingContacts} className="p-2 text-orange-500 hover:bg-orange-500/10 rounded-xl transition-all">
+                            <RefreshCw size={16} className={isLoadingContacts ? 'animate-spin' : ''} />
+                          </button>
                         </div>
-                     ))}
+                        <div className="relative">
+                          <select 
+                            value={selectedInstance?.id || ""} 
+                            onChange={(e) => setSelectedInstance(instances.find(i => i.id === e.target.value) || null)}
+                            className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-5 pr-12 text-[10px] font-black uppercase tracking-[0.2em] outline-none text-white appearance-none cursor-pointer hover:border-orange-500/30 transition-all"
+                          >
+                            <option value="" className="bg-black">Selecionar Terminal</option>
+                            {instances.filter(i => i.status === 'CONNECTED').map(inst => ( 
+                              <option key={inst.id} value={inst.id} className="bg-[#050505]">{inst.name.toUpperCase()}</option> 
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" size={16} />
+                        </div>
+                     </div>
+                     <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                        {isLoadingContacts ? (
+                          <div className="flex flex-col items-center py-20 opacity-20"><Loader2 className="animate-spin text-orange-500 mb-4" size={30} /><span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic">Varrendo Banco Postgres...</span></div>
+                        ) : contacts.length > 0 ? (
+                          contacts.map((contact, i) => (
+                            <div key={i} className="p-4 rounded-2xl hover:bg-orange-500/5 flex items-center gap-4 cursor-pointer group mb-2 border border-transparent hover:border-orange-500/20 transition-all">
+                              <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-black text-orange-500 uppercase group-hover:bg-orange-500 group-hover:text-white transition-all shadow-lg">
+                                {contact.pushName ? contact.pushName[0] : (contact.id ? contact.id[0] : '?')}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-black uppercase truncate text-white/90 group-hover:text-orange-500 transition-colors">{contact.pushName || "Sem Nome"}</p>
+                                <p className="text-[8px] font-bold text-gray-600 uppercase tracking-widest truncate">+{ (contact.id || "").split('@')[0] }</p>
+                              </div>
+                              <div className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(255,115,0,0.5)]"></div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col items-center py-20 opacity-20 text-center px-10">
+                            <Users size={40} className="mb-4 text-orange-500" />
+                            <span className="text-[10px] font-black uppercase tracking-widest leading-loose">Nenhum contato sincronizado com o terminal selecionado.</span>
+                          </div>
+                        )}
+                     </div>
                   </div>
-               </div>
+                  <div className="flex-1 flex flex-col items-center justify-center relative bg-[#020202]">
+                    <Zap size={120} className="text-orange-500 opacity-[0.03] absolute animate-pulse" />
+                    <div className="text-center space-y-6 z-10">
+                       <h4 className="text-3xl font-black uppercase italic tracking-tighter text-white/20">Chat Engine Ready</h4>
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">Sincronização Neural em Tempo Real</p>
+                    </div>
+                  </div>
+                </motion.div>
+             ) : activeTab === 'instancias' ? (
+               <motion.div key="instances" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 p-12 overflow-y-auto custom-scrollbar">
+                  <div className="max-w-6xl mx-auto space-y-12">
+                     <div className="flex items-center justify-between border-b border-white/5 pb-12">
+                        <div>
+                           <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution API v2.3.7 | Sincronização de Banco Ativa</p>
+                        </div>
+                        <div className="flex gap-4">
+                           <button onClick={fetchInstances} className="p-4 glass rounded-2xl text-orange-500 hover:scale-110 transition-all"><RefreshCw size={20}/></button>
+                           <button onClick={handleAutoCreate} disabled={isCreatingInstance} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
+                             {isCreatingInstance ? <Loader2 className="animate-spin" size={16}/> : <Plus size={16} />} 
+                             Nova Instância
+                           </button>
+                        </div>
+                     </div>
+                     
+                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {instances.map(inst => (
+                           <div key={inst.id} className="glass p-8 rounded-[2.5rem] border-white/5 space-y-8 relative overflow-hidden group hover:border-orange-500/40 transition-all shadow-2xl">
+                              <div className="flex items-center justify-between relative z-10">
+                                 <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 ${inst.status === 'CONNECTED' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
+                                    {inst.status === 'CONNECTED' ? <Wifi size={10} className="animate-pulse" /> : <WifiOff size={10} />}
+                                    {inst.status}
+                                 </div>
+                                 <button onClick={() => deleteInstance(inst.name)} className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                              </div>
+                              
+                              <div className="flex items-center gap-6 relative z-10">
+                                 <div className="w-16 h-16 rounded-3xl bg-black border border-white/5 flex items-center justify-center text-orange-500 shadow-xl">
+                                    {inst.profilePicUrl ? <img src={inst.profilePicUrl} className="w-full h-full object-cover rounded-3xl" /> : <Smartphone size={24} className="opacity-40" />}
+                                 </div>
+                                 <div>
+                                    <h4 className="text-[16px] font-black uppercase italic text-white">{inst.name}</h4>
+                                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest italic">{inst.phone}</p>
+                                 </div>
+                              </div>
+
+                              <div className="pt-2">
+                                 {inst.status !== 'CONNECTED' ? (
+                                   <button onClick={() => forceQRGeneration(inst.name)} className="w-full py-5 bg-orange-500/10 border border-orange-500/20 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] text-orange-500 hover:bg-orange-500 hover:text-white transition-all italic flex items-center justify-center gap-3"><Scan size={16} /> Ver QR Code</button>
+                                 ) : (
+                                   <button onClick={() => { setSelectedInstance(inst); setActiveTab('atendimento'); }} className="w-full py-5 bg-orange-500 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white italic hover:bg-orange-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-orange-500/20"><MessageSquare size={16} /> Abrir Atendimento</button>
+                                 )}
+                              </div>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+               </motion.div>
              ) : (
-               <div className="flex-1 flex flex-col items-center justify-center opacity-10">
-                  <Logo size="lg" className="grayscale mb-10" />
-                  <p className="text-[10px] font-black uppercase tracking-[1em]">Cluster Inicializado</p>
-               </div>
+                <div className="flex-1 flex flex-col items-center justify-center opacity-10">
+                   <Logo size="lg" className="grayscale mb-10" />
+                   <p className="text-[10px] font-black uppercase tracking-[1em]">Cluster Inicializado</p>
+                </div>
              )}
            </AnimatePresence>
 
@@ -352,7 +419,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 <div className="text-center space-y-8 glass p-24 rounded-[6rem] border-orange-500/20 shadow-2xl">
                    <Loader2 className="animate-spin text-orange-500 mx-auto" size={120} strokeWidth={1} />
                    <p className="text-[18px] font-black uppercase tracking-[0.8em] text-orange-500 animate-pulse italic text-glow">SINCRONIZANDO v2.3.7</p>
-                   <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-700 italic">Validando DTO de Integração...</p>
+                   <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-700 italic">Estabelecendo Handshake Estável...</p>
                 </div>
              </div>
            )}
@@ -360,7 +427,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       </main>
 
       <style>{`
-        @keyframes scan { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        @keyframes scan { 
+          0% { top: 0%; opacity: 0; } 
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; } 
+        }
         .animate-scan { animation: scan 4s linear infinite; }
         .text-glow { text-shadow: 0 0 30px rgba(255, 115, 0, 0.6); }
       `}</style>
