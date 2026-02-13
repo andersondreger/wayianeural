@@ -81,11 +81,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     const instanceName = selectedInstance.name;
 
     try {
-      // 1. WARM-UP: Verificar status real para "acordar" a rota no cache da Evolution
-      setLastRouteUsed('Acordando Instância...');
-      await fetch(`${EVOLUTION_URL}/instance/connectionStatus/${instanceName}`, { headers: getHeaders(true) });
+      // 1. NEURAL WARM-UP (v4.0): Forçar o servidor a carregar a instância no contexto
+      setLastRouteUsed('Deep Handshake...');
+      const statusRes = await fetch(`${EVOLUTION_URL}/instance/connectionStatus/${instanceName}`, { 
+        headers: getHeaders(true),
+        signal: AbortSignal.timeout(4000)
+      });
+      
+      if (!statusRes.ok && statusRes.status === 404) {
+        throw new Error("Instância não encontrada no Core. Tente reconectar o QR.");
+      }
 
-      // 2. SILENT SETTINGS: Tenta mas não se importa se der 400
+      // 2. BYPASS SETTINGS: Tenta mas ignora qualquer erro 400/500
       try {
         await fetch(`${EVOLUTION_URL}/settings/set/${instanceName}`, {
           method: 'POST',
@@ -93,23 +100,26 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           body: JSON.stringify({ database: true, save: true }),
           signal: AbortSignal.timeout(2000)
         });
-      } catch (e) {}
+      } catch (e) { /* Erro 400 é comum se já estiver configurado, ignoramos. */ }
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // 3. SCANNER HÍBRIDO (Path vs Query)
+      // 3. SCANNER DE ROTAS v4 (Legado e Novo)
       const routes = [
         `/contact/fetchContacts/${instanceName}`,
         `/contact/findMany/${instanceName}`,
+        `/contact/getContacts/${instanceName}`,
         `/contact/findAll/${instanceName}`,
-        `/contact/findMany?instanceName=${instanceName}` // Variação estável v2.3.7
+        `/contact/findMany?instanceName=${instanceName}`
       ];
 
       let successfulData = null;
       let finalRoute = '';
 
       for (const route of routes) {
-        setLastRouteUsed(`Escaneando: ${route.includes('?') ? 'QueryParam' : route.split('/')[2]}`);
+        const displayName = route.includes('?') ? 'QueryParam' : route.split('/')[2];
+        setLastRouteUsed(`Sincronia: ${displayName}`);
+        
         try {
           const res = await fetch(`${EVOLUTION_URL}${route}${route.includes('?') ? '&' : '?'}v=${Date.now()}`, { 
             headers: getHeaders(true) 
@@ -119,26 +129,32 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             successfulData = await res.json();
             finalRoute = route;
             break; 
+          } else {
+            console.warn(`Route ${route} returned ${res.status}`);
           }
         } catch (e) { continue; }
       }
 
       if (!successfulData) {
-        if (retryCount < 1) {
-          setLastRouteUsed(`Re-sincronizando Core...`);
-          await new Promise(resolve => setTimeout(resolve, 1500));
+        if (retryCount < 2) {
+          setLastRouteUsed(`Retry [${retryCount + 1}/2]...`);
+          await new Promise(resolve => setTimeout(resolve, 2500));
           return loadContacts(retryCount + 1);
         }
-        throw new Error("Instância sem Banco Ativo ou cache 404. Tente Reiniciar o terminal.");
+        throw new Error("Handshake Negado (Servidor indisponível ou Instância offline)");
       }
 
-      setLastRouteUsed(`Conectado: ${finalRoute.split('/')[2].split('?')[0]}`);
+      setLastRouteUsed(`Estabilizado: ${finalRoute.includes('?') ? 'Legacy' : finalRoute.split('/')[2]}`);
 
-      // 4. PARSING RESILIENTE
+      // 4. PARSING DE DADOS RESILIENTE
       let rawList = [];
-      if (Array.isArray(successfulData)) rawList = successfulData;
-      else if (successfulData.data) rawList = Array.isArray(successfulData.data) ? successfulData.data : (successfulData.data.contacts || []);
-      else if (successfulData.contacts) rawList = successfulData.contacts;
+      if (Array.isArray(successfulData)) {
+        rawList = successfulData;
+      } else if (successfulData.data) {
+        rawList = Array.isArray(successfulData.data) ? successfulData.data : (successfulData.data.contacts || []);
+      } else if (successfulData.contacts) {
+        rawList = successfulData.contacts;
+      }
 
       const filtered = rawList.filter((c: any) => {
         const jid = c.id || c.remoteJid || c.jid || "";
@@ -151,9 +167,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       setContacts(filtered);
     } catch (e: any) {
-      console.error("[Fatal Handshake]", e);
+      console.error("[Fatal Handshake v4]", e);
       setApiError(e.message);
-      setLastRouteUsed('Handshake Rejeitado');
+      setLastRouteUsed('Falha Crítica');
     } finally {
       setIsLoadingContacts(false);
     }
@@ -249,8 +265,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <ChevronLeft size={16} className={!isSidebarExpanded ? 'rotate-180' : ''} />
             </button>
             <div className="flex flex-col">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-white italic text-glow">WayFlow Neural v3.9</h2>
-              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Hybrid Scanner: v2.3.7-STABLE</span>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-white italic text-glow">WayFlow Neural v4.0</h2>
+              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Deep Sync: Evolution v2.3.7</span>
             </div>
           </div>
           <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
@@ -283,12 +299,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         </div>
                         
                         {lastRouteUsed && (
-                          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${lastRouteUsed.includes('Rejeitado') ? 'bg-red-500/5 border-red-500/10' : 'bg-orange-500/5 border-orange-500/10'}`}>
-                            <div className={`p-1.5 rounded-lg ${lastRouteUsed.includes('Rejeitado') ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
-                               {lastRouteUsed.includes('Handshake') ? <ShieldAlert size={12} /> : <Radio size={12} className={isLoadingContacts ? 'animate-pulse' : ''} />}
+                          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${lastRouteUsed.includes('Falha') || lastRouteUsed.includes('Rejeitado') ? 'bg-red-500/5 border-red-500/10' : 'bg-orange-500/5 border-orange-500/10'}`}>
+                            <div className={`p-1.5 rounded-lg ${lastRouteUsed.includes('Falha') ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
+                               {lastRouteUsed.includes('Deep') ? <Zap size={12} className="animate-pulse" /> : <Link2 size={12} className={isLoadingContacts ? 'animate-pulse' : ''} />}
                             </div>
-                            <div className="flex flex-col">
-                              <span className="text-[6px] font-black uppercase text-gray-600 tracking-widest">Sincronia Neural</span>
+                            <div className="flex flex-col overflow-hidden">
+                              <span className="text-[6px] font-black uppercase text-gray-600 tracking-widest">Estado de Sincronia</span>
                               <span className="text-[8px] font-mono text-white truncate font-bold uppercase">{lastRouteUsed}</span>
                             </div>
                           </div>
@@ -299,7 +315,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         {isLoadingContacts ? (
                           <div className="flex flex-col items-center py-20 opacity-40 text-center">
                             <Loader2 className="animate-spin text-orange-500 mb-4" size={32} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic">Varrendo Banco Postgres...</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic">Estabelecendo Handshake...</span>
                           </div>
                         ) : contacts.length > 0 ? (
                           contacts.map((contact, i) => (
@@ -317,11 +333,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                           <div className="flex flex-col items-center py-24 opacity-30 text-center px-10">
                             <Database size={44} className="mb-6 text-orange-500" />
                             <span className="text-[10px] font-black uppercase tracking-[0.3em] leading-relaxed">
-                              {selectedInstance ? 'Aguardando Sincronia de Banco...' : 'Selecione um terminal para iniciar.'}
+                              {selectedInstance ? 'Aguardando Sincronia Neural...' : 'Selecione um terminal para iniciar.'}
                             </span>
                             {apiError && (
                               <div className="mt-6 p-4 rounded-xl bg-red-500/5 border border-red-500/10">
-                                <p className="text-[8px] text-red-500 font-black uppercase tracking-widest mb-2 flex items-center gap-2 justify-center"><Bug size={10}/> Report</p>
+                                <p className="text-[8px] text-red-500 font-black uppercase tracking-widest mb-2 flex items-center gap-2 justify-center"><Bug size={10}/> Handshake Failed</p>
                                 <p className="text-[9px] text-gray-500 lowercase leading-tight">{apiError}</p>
                               </div>
                             )}
@@ -333,7 +349,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     <Zap size={140} className="text-orange-500 opacity-[0.02] absolute animate-pulse" />
                     <div className="text-center space-y-6 z-10 p-12 glass border-white/5 rounded-[4rem]">
                        <h4 className="text-3xl font-black uppercase italic tracking-tighter text-white/10">Neural Hub Ready</h4>
-                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Engine v3.9</p>
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Engine v4.0</p>
                     </div>
                   </div>
                 </motion.div>
@@ -343,7 +359,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex items-center justify-between border-b border-white/5 pb-12">
                         <div>
                            <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
-                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Neural Fix v3.9</p>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Handshake v4.0</p>
                         </div>
                         <div className="flex gap-4">
                            <button onClick={handleAutoCreate} disabled={isCreatingInstance} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
