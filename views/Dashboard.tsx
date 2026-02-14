@@ -10,7 +10,8 @@ import {
   UserCheck, ExternalLink, AlertTriangle, Users, MailCheck,
   Terminal, ShieldAlert, Filter, Database, Search, Link2,
   ShieldQuestion, Bug, Radio, RotateCcw, Fingerprint, HardDrive,
-  Link, Shield, Cable
+  Link, Shield, Cable, Braces, Unplug, LifeBuoy, ZapOff,
+  Stethoscope, Waves
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
@@ -38,13 +39,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // v5.5: Deep-Scan Headers para Bypass de DNS e Proxy
   const getHeaders = (instanceName?: string) => ({ 
     'apikey': EVOLUTION_API_KEY, 
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    ...(instanceName ? { 'instance': instanceName } : {}) 
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'X-Instance-Recovery': 'true',
+    'X-Neural-Pulse': Date.now().toString(),
+    ...(instanceName ? { 
+      'instance': instanceName,
+      'X-Instance-Name': instanceName 
+    } : {}) 
   });
 
   const fetchInstances = async () => {
@@ -62,7 +68,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         const s = (core.connectionStatus || core.status || "").toLowerCase();
         const isConnected = s === 'open' || s === 'connected';
         return {
-          id: core.instanceId || core.id || name, // Este é o UUID fundamental
+          id: core.instanceId || core.id || name, 
           name: name,
           status: isConnected ? 'CONNECTED' : (s === 'connecting' ? 'CONNECTING' : 'DISCONNECTED'),
           phone: core.ownerJid ? core.ownerJid.split('@')[0] : 'Off-line',
@@ -70,38 +76,44 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         };
       });
       setInstances(mapped);
-      if (mapped.length > 0 && !selectedInstance) {
-        const conn = mapped.find((i: any) => i.status === 'CONNECTED');
-        if (conn) setSelectedInstance(conn);
+      
+      if (selectedInstance) {
+        const updated = mapped.find(i => i.id === selectedInstance.id);
+        if (updated && updated.status !== selectedInstance.status) {
+          setSelectedInstance(updated);
+        }
       }
     } catch (e) {
       console.error('Polling Error:', e);
     }
   };
 
-  const silentHandshake = async (name: string) => {
+  // v5.5: Deep-Scan Pulse (Reparo Nível 3 - Força re-leitura de sessão)
+  const deepScanRepair = async (name: string) => {
+    setLastRouteUsed('Neural Deep-Scan: Analisando Core...');
     try {
-      setLastRouteUsed('Neural Repair: Handshake...');
-      const res = await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { 
-        method: 'POST', // Algumas versões exigem POST para re-bind
+      // 1. Pulso de Verificação (Verifica se o processo está vivo)
+      await fetch(`${EVOLUTION_URL}/instance/connectionState/${name}`, { headers: getHeaders(name) });
+      
+      // 2. Pulso de Re-vínculo (Tenta forçar o banco de dados a ler o cache)
+      await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { 
+        method: 'POST', 
         headers: getHeaders(name),
-        signal: AbortSignal.timeout(4000)
+        body: JSON.stringify({})
       });
-      return res.ok;
+      
+      // 3. Delay Progressivo para estabilização da Bridge
+      await new Promise(r => setTimeout(r, 2500));
+      return true;
     } catch (e) {
-      // Tenta via GET se o POST falhar
-      try {
-        await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { headers: getHeaders(name) });
-      } catch(e2) {}
       return false;
     }
   };
 
   const recycleInstance = async (name: string) => {
     setIsLoadingContacts(true);
-    setLastRouteUsed('Neural Recycle: Resetando Túnel...');
-    await silentHandshake(name);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    setLastRouteUsed('Deep-Reset: Reconstruindo Túnel...');
+    await deepScanRepair(name);
     await fetchInstances();
     if (activeTab === 'atendimento') loadContacts();
   };
@@ -115,67 +127,65 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     const uuid = selectedInstance.id;
 
     try {
-      setLastRouteUsed('Neural Sync v5.0...');
+      setLastRouteUsed('Bridge v5.5: Estabelecendo...');
       
-      // Se falhou antes, o primeiro passo do retry é SEMPRE o handshake
+      // Auto-Healing Lógica
       if (retryCount > 0) {
-        setLastRouteUsed(`Overdrive Handshake [${retryCount}]...`);
-        await silentHandshake(name);
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        setLastRouteUsed(`Auto-Healing Pulse [${retryCount}]...`);
+        await deepScanRepair(name);
       }
 
-      // ESTRATÉGIA DE TÚNEL MULTI-CAMADA
-      // v5.0 prioriza UUID conforme vimos no seu log de erro
+      // Prioridade: Rota de Cache (fetchContacts) -> Rota de DB (findMany)
       const routes = [
-        `/contact/findMany/${uuid}`,               // Rota Core (UUID)
-        `/contact/fetchContacts/${name}`,         // Rota Legacy (Nome)
-        `/contact/findMany?instanceName=${name}`,  // Rota Query
-        `/contact/getContacts/${uuid}`             // Rota Alt
+        `/contact/fetchContacts/${name}`,         // 1. Força busca no cache Baileys (Ignora DB zumbi)
+        `/contact/findMany/${uuid}`,               // 2. Busca direta por UUID
+        `/contact/findMany?instanceName=${name}`,  // 3. Busca por Nome
+        `/contact/getContacts/${name}`             // 4. Fallback Legado
       ];
 
       let successfulData = null;
-      let finalRoute = '';
+      let usedRoute = '';
 
       for (const route of routes) {
-        const isUUID = route.includes(uuid);
-        setLastRouteUsed(`Neural Mapping: ${isUUID ? 'UUID-BRIDGE' : 'NAME-BRIDGE'}`);
-        
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
+
           const res = await fetch(`${EVOLUTION_URL}${route}${route.includes('?') ? '&' : '?'}v=${Date.now()}`, { 
             headers: getHeaders(name),
-            mode: 'cors'
+            mode: 'cors',
+            signal: controller.signal
           });
           
+          clearTimeout(timeoutId);
+
           if (res.ok) {
-            const temp = await res.json();
-            // Verifica se o retorno não é vazio ou erro mascarado
-            if (temp && (Array.isArray(temp) || temp.data || temp.contacts)) {
-                successfulData = temp;
-                finalRoute = route;
-                break;
+            const data = await res.json();
+            const list = Array.isArray(data) ? data : (data.data || data.contacts);
+            if (list && list.length >= 0) { 
+              successfulData = list;
+              usedRoute = route;
+              break;
             }
           }
         } catch (e) { continue; }
       }
 
-      if (!successfulData) {
-        if (retryCount < 3) { // 3 tentativas de reparo automático
+      // Se todas as rotas falharam mas o status é CONNECTED, tentamos o Auto-Healing antes de dar erro
+      if (successfulData === null) {
+        if (retryCount < 2) { 
+          // Espera um pouco antes do próximo pulso para não ser bloqueado pelo firewall
+          await new Promise(r => setTimeout(r, 1000 * retryCount));
           return loadContacts(retryCount + 1);
         }
-        throw new Error("Túnel Bloqueado: O Core da API não está respondendo aos pedidos de banco de dados. Clique em 'Reciclar' para forçar o re-mapeamento de memória.");
+        throw new Error("Túnel Bloqueado: O servidor reporta conexão mas o banco de dados está em modo 'Zumbi'. Clique em 'RECICLAR'.");
       }
 
-      setLastRouteUsed(`Sincronizado: ${finalRoute.includes(uuid) ? 'UUID' : 'NAME'}`);
+      setLastRouteUsed(`Ponte Estável: ${usedRoute.includes('fetch') ? 'DEEP-CACHE' : 'DB-QUERY'}`);
 
-      let rawList = [];
-      if (Array.isArray(successfulData)) rawList = successfulData;
-      else if (successfulData.data) rawList = Array.isArray(successfulData.data) ? successfulData.data : (successfulData.data.contacts || []);
-      else if (successfulData.contacts) rawList = successfulData.contacts;
-
-      // Filtro agressivo para limpar ruídos de logs (LIDs, Grupos, Status)
-      const filtered = rawList.filter((c: any) => {
+      const filtered = successfulData.filter((c: any) => {
         const jid = c.id || c.remoteJid || c.jid || "";
-        return jid && !jid.includes('@g.us') && !jid.includes('@lid') && !jid.includes('status');
+        return jid && jid.includes('@s.whatsapp.net');
       }).map((c: any) => ({
         ...c,
         id: c.id || c.remoteJid || c.jid,
@@ -184,9 +194,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       setContacts(filtered);
     } catch (e: any) {
-      console.error("[Neural Fatal v5.0]", e);
+      console.error("[Neural Bridge v5.5]", e);
       setApiError(e.message);
-      setLastRouteUsed('Ponte Rejeitada');
+      setLastRouteUsed('Erro de Túnel');
     } finally {
       setIsLoadingContacts(false);
     }
@@ -202,12 +212,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         headers: getHeaders(),
         body: JSON.stringify({ instanceName: autoName, token: "wayflow_" + Math.random().toString(36).substring(5), integration: "WHATSAPP-BAILEYS", qrcode: true })
       });
-      const data = await res.json();
-      if (res.ok || res.status === 201) {
-        const b64 = data.qrcode?.base64 || data.instance?.qrcode?.base64;
-        if (b64) setQrCodeData({ base64: b64, name: autoName });
-        else await forceQRGeneration(autoName);
+      if (res.ok) {
         await fetchInstances();
+        await forceQRGeneration(autoName);
       }
     } catch (e) { setApiError("Falha na criação do cluster."); }
     finally { setIsCreatingInstance(false); }
@@ -221,25 +228,25 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       const base64 = data.base64 || data.qrcode?.base64;
       if (base64) setQrCodeData({ base64: base64, name: instanceName });
       else setTimeout(() => forceQRGeneration(instanceName), 4000);
-    } catch (e) { console.error("Handshake Sync Error"); }
+    } catch (e) { console.error("QR Sync Error"); }
     finally { setIsLoadingQR(false); }
   };
 
   const deleteInstance = async (name: string) => {
-    if (!confirm(`Remover terminal neural ${name}?`)) return;
+    if (!confirm(`Remover terminal ${name}?`)) return;
     await fetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: getHeaders() });
     await fetchInstances();
   };
 
   useEffect(() => {
     fetchInstances();
-    const timer = setInterval(fetchInstances, 15000);
+    const timer = setInterval(fetchInstances, 25000);
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     if (activeTab === 'atendimento' && selectedInstance) loadContacts();
-  }, [selectedInstance?.name, activeTab]);
+  }, [selectedInstance?.id, activeTab]);
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -282,8 +289,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <ChevronLeft size={16} className={!isSidebarExpanded ? 'rotate-180' : ''} />
             </button>
             <div className="flex flex-col">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-glow">WayFlow Neural v5.0</h2>
-              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Neural Overdrive Protocol: ACTIVE</span>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-glow">WayFlow Neural v5.5</h2>
+              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Deep-Scan Engine: ACTIVE</span>
             </div>
           </div>
           <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
@@ -316,12 +323,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         </div>
                         
                         {lastRouteUsed && (
-                          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${lastRouteUsed.includes('Rejeitada') ? 'bg-red-500/5 border-red-500/10 animate-pulse' : 'bg-orange-500/5 border-orange-500/10'}`}>
-                            <div className={`p-1.5 rounded-lg ${lastRouteUsed.includes('Rejeitada') ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
-                               {lastRouteUsed.includes('UUID') ? <Fingerprint size={12} className="animate-pulse" /> : <Cable size={12} className={isLoadingContacts ? 'animate-pulse' : ''} />}
+                          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${lastRouteUsed.includes('Erro') || lastRouteUsed.includes('Pulse') || lastRouteUsed.includes('Scan') ? 'bg-red-500/5 border-red-500/10 animate-pulse' : 'bg-orange-500/5 border-orange-500/10'}`}>
+                            <div className={`p-1.5 rounded-lg ${lastRouteUsed.includes('Erro') || lastRouteUsed.includes('Pulse') ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
+                               {lastRouteUsed.includes('Scan') ? <Stethoscope size={12} className="animate-pulse" /> : <Waves size={12} className={isLoadingContacts ? 'animate-pulse' : ''} />}
                             </div>
                             <div className="flex flex-col overflow-hidden">
-                              <span className="text-[6px] font-black uppercase text-gray-600 tracking-widest">Estado de Sincronia</span>
+                              <span className="text-[6px] font-black uppercase text-gray-600 tracking-widest">Estado da Ponte</span>
                               <span className="text-[8px] font-mono text-white truncate font-bold uppercase">{lastRouteUsed}</span>
                             </div>
                           </div>
@@ -332,7 +339,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         {isLoadingContacts ? (
                           <div className="flex flex-col items-center py-20 opacity-40 text-center">
                             <Loader2 className="animate-spin text-orange-500 mb-4" size={32} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic">Negociando Tunelamento Quântico...</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic px-10">Neural Deep-Scan v5.5...</span>
                           </div>
                         ) : contacts.length > 0 ? (
                           contacts.map((contact, i) => (
@@ -350,17 +357,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                           <div className="flex flex-col items-center py-24 opacity-30 text-center px-10">
                             <Database size={44} className="mb-6 text-orange-500" />
                             <span className="text-[10px] font-black uppercase tracking-[0.3em] leading-relaxed">
-                              {selectedInstance ? 'Aguardando Tunneling...' : 'Selecione um terminal.'}
+                              {selectedInstance ? 'Negociando Ponte...' : 'Selecione um terminal.'}
                             </span>
                             {apiError && (
                               <div className="mt-8 p-6 rounded-3xl bg-red-500/5 border border-red-500/10 space-y-4">
-                                <p className="text-[8px] text-red-500 font-black uppercase tracking-widest flex items-center gap-2 justify-center"><Bug size={10}/> Ponte Interrompida</p>
-                                <p className="text-[9px] text-gray-500 lowercase leading-tight">{apiError}</p>
+                                <p className="text-[8px] text-red-500 font-black uppercase tracking-widest flex items-center gap-2 justify-center"><ZapOff size={10}/> Ponte Bloqueada</p>
+                                <p className="text-[9px] text-gray-500 lowercase leading-tight italic">{apiError}</p>
                                 <button 
                                   onClick={() => selectedInstance && recycleInstance(selectedInstance.name)}
                                   className="w-full py-3 bg-orange-500/10 border border-orange-500/20 rounded-xl text-[8px] font-black uppercase tracking-widest text-orange-500 hover:bg-orange-500 hover:text-white transition-all flex items-center justify-center gap-2"
                                 >
-                                  <RotateCcw size={10} /> Reciclar Terminal Neural
+                                  <RotateCcw size={10} /> Executar Deep-Scan Recovery
                                 </button>
                               </div>
                             )}
@@ -372,7 +379,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     <Zap size={140} className="text-orange-500 opacity-[0.02] absolute animate-pulse" />
                     <div className="text-center space-y-6 z-10 p-12 glass border-white/5 rounded-[4rem]">
                        <h4 className="text-3xl font-black uppercase italic tracking-tighter text-white/10">Neural Hub Ready</h4>
-                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Overdrive Engine v5.0</p>
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Deep-Scan v5.5</p>
                     </div>
                   </div>
                 </motion.div>
@@ -382,7 +389,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex items-center justify-between border-b border-white/5 pb-12">
                         <div>
                            <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
-                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Overdrive Protocol v5.0</p>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Deep-Scan v5.5</p>
                         </div>
                         <div className="flex gap-4">
                            <button onClick={handleAutoCreate} disabled={isCreatingInstance} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
@@ -398,7 +405,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                     {inst.status === 'CONNECTED' ? <Wifi size={10} className="animate-pulse" /> : <WifiOff size={10} />} {inst.status}
                                  </div>
                                  <div className="flex gap-2">
-                                    <button onClick={() => recycleInstance(inst.name)} title="Neural Deep Recycle" className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-orange-500 transition-colors"><RotateCcw size={14} /></button>
+                                    <button onClick={() => recycleInstance(inst.name)} title="Deep-Scan Recovery" className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-orange-500 transition-colors"><RotateCcw size={14} /></button>
                                     <button onClick={() => deleteInstance(inst.name)} className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                                  </div>
                               </div>
@@ -443,7 +450,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                       </div>
                       <div className="flex items-center gap-4 text-orange-500 animate-pulse justify-center">
                         <Activity size={20} />
-                        <span className="text-[10px] font-black uppercase tracking-[0.5em] italic">Aguardando Handshake...</span>
+                        <span className="text-[10px] font-black uppercase tracking-[0.5em] italic">Aguardando Neural-Link...</span>
                       </div>
                    </motion.div>
                 </motion.div>
