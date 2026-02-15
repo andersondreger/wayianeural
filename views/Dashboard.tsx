@@ -11,7 +11,7 @@ import {
   Terminal, ShieldAlert, Filter, Database, Search, Link2,
   ShieldQuestion, Bug, Radio, RotateCcw, Fingerprint, HardDrive,
   Link, Shield, Cable, Braces, Unplug, LifeBuoy, ZapOff,
-  Stethoscope, Waves
+  Stethoscope, Waves, HeartPulse
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
@@ -39,13 +39,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // v5.5: Deep-Scan Headers para Bypass de DNS e Proxy
+  // v5.6: Neural Overdrive Headers - Força o Router a ignorar cache de proxy e DB estagnado
   const getHeaders = (instanceName?: string) => ({ 
     'apikey': EVOLUTION_API_KEY, 
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
-    'X-Instance-Recovery': 'true',
+    'Pragma': 'no-cache',
+    'X-Force-Instance-Sync': 'true',
     'X-Neural-Pulse': Date.now().toString(),
     ...(instanceName ? { 
       'instance': instanceName,
@@ -88,22 +89,23 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   };
 
-  // v5.5: Deep-Scan Pulse (Reparo Nível 3 - Força re-leitura de sessão)
-  const deepScanRepair = async (name: string) => {
-    setLastRouteUsed('Neural Deep-Scan: Analisando Core...');
+  // v5.6: Neural-Overdrive Heartbeat (Força a reinicialização da ponte lógica sem desconectar o WhatsApp)
+  const neuralOverdriveRepair = async (name: string) => {
+    setLastRouteUsed('Overdrive: Forçando Re-sincronização...');
     try {
-      // 1. Pulso de Verificação (Verifica se o processo está vivo)
+      // 1. Pulso de Despertar (Connection State)
       await fetch(`${EVOLUTION_URL}/instance/connectionState/${name}`, { headers: getHeaders(name) });
       
-      // 2. Pulso de Re-vínculo (Tenta forçar o banco de dados a ler o cache)
+      // 2. Comando Overdrive (Tenta "re-conectar" logicamente ao banco sem pedir QR)
+      // No cluster evo2, enviar um connect com qrcode false e qrcodeFull false ajuda a re-vincular o DB
       await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { 
         method: 'POST', 
         headers: getHeaders(name),
-        body: JSON.stringify({})
+        body: JSON.stringify({ qrcode: false, qrcodeFull: false })
       });
       
-      // 3. Delay Progressivo para estabilização da Bridge
-      await new Promise(r => setTimeout(r, 2500));
+      // 3. Estabilização (Tempo para o Router processar o re-vínculo)
+      await new Promise(r => setTimeout(r, 3500));
       return true;
     } catch (e) {
       return false;
@@ -112,8 +114,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const recycleInstance = async (name: string) => {
     setIsLoadingContacts(true);
-    setLastRouteUsed('Deep-Reset: Reconstruindo Túnel...');
-    await deepScanRepair(name);
+    setLastRouteUsed('Neural-Reset: Executando Overdrive...');
+    await neuralOverdriveRepair(name);
     await fetchInstances();
     if (activeTab === 'atendimento') loadContacts();
   };
@@ -127,20 +129,20 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     const uuid = selectedInstance.id;
 
     try {
-      setLastRouteUsed('Bridge v5.5: Estabelecendo...');
+      setLastRouteUsed('Neural-Bridge v5.6: Ativa');
       
-      // Auto-Healing Lógica
+      // Se estamos em retry, o banco está provavelmente em modo Zumbi. Forçamos o Overdrive.
       if (retryCount > 0) {
-        setLastRouteUsed(`Auto-Healing Pulse [${retryCount}]...`);
-        await deepScanRepair(name);
+        setLastRouteUsed(`Overdrive Repair [${retryCount}/3]...`);
+        await neuralOverdriveRepair(name);
       }
 
-      // Prioridade: Rota de Cache (fetchContacts) -> Rota de DB (findMany)
+      // v5.6: Novas rotas de bypass para o cluster evo2
       const routes = [
-        `/contact/fetchContacts/${name}`,         // 1. Força busca no cache Baileys (Ignora DB zumbi)
-        `/contact/findMany/${uuid}`,               // 2. Busca direta por UUID
-        `/contact/findMany?instanceName=${name}`,  // 3. Busca por Nome
-        `/contact/getContacts/${name}`             // 4. Fallback Legado
+        `/contact/fetchContacts/${name}`,         // Prioridade 1: Cache Baileys (Pula o SQL se estiver travado)
+        `/contact/findMany?instanceName=${name}`,  // Prioridade 2: Nome com Query Params (Força o Router)
+        `/contact/findMany/${uuid}`,               // Prioridade 3: UUID Direct
+        `/contact/getContacts/${name}`             // Prioridade 4: Fallback
       ];
 
       let successfulData = null;
@@ -149,7 +151,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       for (const route of routes) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 15000);
+          const timeoutId = setTimeout(() => controller.abort(), 12000);
 
           const res = await fetch(`${EVOLUTION_URL}${route}${route.includes('?') ? '&' : '?'}v=${Date.now()}`, { 
             headers: getHeaders(name),
@@ -162,7 +164,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           if (res.ok) {
             const data = await res.json();
             const list = Array.isArray(data) ? data : (data.data || data.contacts);
-            if (list && list.length >= 0) { 
+            // v5.6: Se o servidor retornar sucesso mas uma lista nula/undefined, ele está em modo Zumbi
+            if (list !== null && list !== undefined) { 
               successfulData = list;
               usedRoute = route;
               break;
@@ -171,17 +174,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         } catch (e) { continue; }
       }
 
-      // Se todas as rotas falharam mas o status é CONNECTED, tentamos o Auto-Healing antes de dar erro
       if (successfulData === null) {
         if (retryCount < 2) { 
-          // Espera um pouco antes do próximo pulso para não ser bloqueado pelo firewall
-          await new Promise(r => setTimeout(r, 1000 * retryCount));
+          // Espera exponencial para o próximo pulso
+          await new Promise(r => setTimeout(r, 1500 * (retryCount + 1)));
           return loadContacts(retryCount + 1);
         }
-        throw new Error("Túnel Bloqueado: O servidor reporta conexão mas o banco de dados está em modo 'Zumbi'. Clique em 'RECICLAR'.");
+        throw new Error("Ponte Rompida: O terminal está ativo mas o acesso ao banco de dados foi negado pelo servidor (Zumbi). Clique em 'RECICLAR'.");
       }
 
-      setLastRouteUsed(`Ponte Estável: ${usedRoute.includes('fetch') ? 'DEEP-CACHE' : 'DB-QUERY'}`);
+      setLastRouteUsed(`Overdrive Stable: ${usedRoute.includes('fetch') ? 'BAILEYS-CACHE' : 'SQL-LINK'}`);
 
       const filtered = successfulData.filter((c: any) => {
         const jid = c.id || c.remoteJid || c.jid || "";
@@ -194,9 +196,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       setContacts(filtered);
     } catch (e: any) {
-      console.error("[Neural Bridge v5.5]", e);
+      console.error("[Neural Overdrive v5.6]", e);
       setApiError(e.message);
-      setLastRouteUsed('Erro de Túnel');
+      setLastRouteUsed('Falha de Túnel');
     } finally {
       setIsLoadingContacts(false);
     }
@@ -289,8 +291,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <ChevronLeft size={16} className={!isSidebarExpanded ? 'rotate-180' : ''} />
             </button>
             <div className="flex flex-col">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-glow">WayFlow Neural v5.5</h2>
-              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Deep-Scan Engine: ACTIVE</span>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-glow">WayFlow Neural v5.6</h2>
+              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Neural-Overdrive v5.6: ACTIVE</span>
             </div>
           </div>
           <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
@@ -323,9 +325,9 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         </div>
                         
                         {lastRouteUsed && (
-                          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${lastRouteUsed.includes('Erro') || lastRouteUsed.includes('Pulse') || lastRouteUsed.includes('Scan') ? 'bg-red-500/5 border-red-500/10 animate-pulse' : 'bg-orange-500/5 border-orange-500/10'}`}>
-                            <div className={`p-1.5 rounded-lg ${lastRouteUsed.includes('Erro') || lastRouteUsed.includes('Pulse') ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
-                               {lastRouteUsed.includes('Scan') ? <Stethoscope size={12} className="animate-pulse" /> : <Waves size={12} className={isLoadingContacts ? 'animate-pulse' : ''} />}
+                          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${lastRouteUsed.includes('Falha') || lastRouteUsed.includes('Repair') || lastRouteUsed.includes('Zumbi') ? 'bg-red-500/5 border-red-500/10 animate-pulse' : 'bg-orange-500/5 border-orange-500/10'}`}>
+                            <div className={`p-1.5 rounded-lg ${lastRouteUsed.includes('Falha') || lastRouteUsed.includes('Repair') ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
+                               {lastRouteUsed.includes('Overdrive') ? <HeartPulse size={12} className="animate-pulse" /> : <Network size={12} className={isLoadingContacts ? 'animate-pulse' : ''} />}
                             </div>
                             <div className="flex flex-col overflow-hidden">
                               <span className="text-[6px] font-black uppercase text-gray-600 tracking-widest">Estado da Ponte</span>
@@ -339,7 +341,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         {isLoadingContacts ? (
                           <div className="flex flex-col items-center py-20 opacity-40 text-center">
                             <Loader2 className="animate-spin text-orange-500 mb-4" size={32} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic px-10">Neural Deep-Scan v5.5...</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic px-10">Neural Overdrive v5.6...</span>
                           </div>
                         ) : contacts.length > 0 ? (
                           contacts.map((contact, i) => (
@@ -361,13 +363,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             </span>
                             {apiError && (
                               <div className="mt-8 p-6 rounded-3xl bg-red-500/5 border border-red-500/10 space-y-4">
-                                <p className="text-[8px] text-red-500 font-black uppercase tracking-widest flex items-center gap-2 justify-center"><ZapOff size={10}/> Ponte Bloqueada</p>
+                                <p className="text-[8px] text-red-500 font-black uppercase tracking-widest flex items-center gap-2 justify-center"><ZapOff size={10}/> Ponte Zumbi</p>
                                 <p className="text-[9px] text-gray-500 lowercase leading-tight italic">{apiError}</p>
                                 <button 
                                   onClick={() => selectedInstance && recycleInstance(selectedInstance.name)}
                                   className="w-full py-3 bg-orange-500/10 border border-orange-500/20 rounded-xl text-[8px] font-black uppercase tracking-widest text-orange-500 hover:bg-orange-500 hover:text-white transition-all flex items-center justify-center gap-2"
                                 >
-                                  <RotateCcw size={10} /> Executar Deep-Scan Recovery
+                                  <RotateCcw size={10} /> Forçar Neural-Overdrive
                                 </button>
                               </div>
                             )}
@@ -379,7 +381,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     <Zap size={140} className="text-orange-500 opacity-[0.02] absolute animate-pulse" />
                     <div className="text-center space-y-6 z-10 p-12 glass border-white/5 rounded-[4rem]">
                        <h4 className="text-3xl font-black uppercase italic tracking-tighter text-white/10">Neural Hub Ready</h4>
-                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Deep-Scan v5.5</p>
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Overdrive v5.6</p>
                     </div>
                   </div>
                 </motion.div>
@@ -389,7 +391,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex items-center justify-between border-b border-white/5 pb-12">
                         <div>
                            <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
-                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Deep-Scan v5.5</p>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Overdrive v5.6</p>
                         </div>
                         <div className="flex gap-4">
                            <button onClick={handleAutoCreate} disabled={isCreatingInstance} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
@@ -405,7 +407,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                                     {inst.status === 'CONNECTED' ? <Wifi size={10} className="animate-pulse" /> : <WifiOff size={10} />} {inst.status}
                                  </div>
                                  <div className="flex gap-2">
-                                    <button onClick={() => recycleInstance(inst.name)} title="Deep-Scan Recovery" className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-orange-500 transition-colors"><RotateCcw size={14} /></button>
+                                    <button onClick={() => recycleInstance(inst.name)} title="Neural-Overdrive Recovery" className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-orange-500 transition-colors"><RotateCcw size={14} /></button>
                                     <button onClick={() => deleteInstance(inst.name)} className="p-3 bg-white/5 rounded-xl text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                                  </div>
                               </div>
