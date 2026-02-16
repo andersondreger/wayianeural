@@ -11,7 +11,7 @@ import {
   Terminal, ShieldAlert, Filter, Database, Search, Link2,
   ShieldQuestion, Bug, Radio, RotateCcw, Fingerprint, HardDrive,
   Link, Shield, Cable, Braces, Unplug, LifeBuoy, ZapOff,
-  Stethoscope, Waves, HeartPulse
+  Stethoscope, Waves, HeartPulse, Edit3
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
@@ -37,9 +37,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [qrCodeData, setQrCodeData] = useState<{base64: string, name: string} | null>(null);
   const [isLoadingQR, setIsLoadingQR] = useState(false);
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
+  const [isNamingInstance, setIsNamingInstance] = useState(false);
+  const [newInstanceName, setNewInstanceName] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // v5.6: Neural Overdrive Headers - Força o Router a ignorar cache de proxy e DB estagnado
+  // v5.7: Neural Overdrive Headers - Força o Router a ignorar cache de proxy e DB estagnado
   const getHeaders = (instanceName?: string) => ({ 
     'apikey': EVOLUTION_API_KEY, 
     'Content-Type': 'application/json',
@@ -89,22 +91,15 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   };
 
-  // v5.6: Neural-Overdrive Heartbeat (Força a reinicialização da ponte lógica sem desconectar o WhatsApp)
   const neuralOverdriveRepair = async (name: string) => {
     setLastRouteUsed('Overdrive: Forçando Re-sincronização...');
     try {
-      // 1. Pulso de Despertar (Connection State)
       await fetch(`${EVOLUTION_URL}/instance/connectionState/${name}`, { headers: getHeaders(name) });
-      
-      // 2. Comando Overdrive (Tenta "re-conectar" logicamente ao banco sem pedir QR)
-      // No cluster evo2, enviar um connect com qrcode false e qrcodeFull false ajuda a re-vincular o DB
       await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { 
         method: 'POST', 
         headers: getHeaders(name),
         body: JSON.stringify({ qrcode: false, qrcodeFull: false })
       });
-      
-      // 3. Estabilização (Tempo para o Router processar o re-vínculo)
       await new Promise(r => setTimeout(r, 3500));
       return true;
     } catch (e) {
@@ -130,19 +125,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
     try {
       setLastRouteUsed('Neural-Bridge v5.6: Ativa');
-      
-      // Se estamos em retry, o banco está provavelmente em modo Zumbi. Forçamos o Overdrive.
       if (retryCount > 0) {
         setLastRouteUsed(`Overdrive Repair [${retryCount}/3]...`);
         await neuralOverdriveRepair(name);
       }
 
-      // v5.6: Novas rotas de bypass para o cluster evo2
       const routes = [
-        `/contact/fetchContacts/${name}`,         // Prioridade 1: Cache Baileys (Pula o SQL se estiver travado)
-        `/contact/findMany?instanceName=${name}`,  // Prioridade 2: Nome com Query Params (Força o Router)
-        `/contact/findMany/${uuid}`,               // Prioridade 3: UUID Direct
-        `/contact/getContacts/${name}`             // Prioridade 4: Fallback
+        `/contact/fetchContacts/${name}`,
+        `/contact/findMany?instanceName=${name}`,
+        `/contact/findMany/${uuid}`,
+        `/contact/getContacts/${name}`
       ];
 
       let successfulData = null;
@@ -150,21 +142,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       for (const route of routes) {
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 12000);
-
           const res = await fetch(`${EVOLUTION_URL}${route}${route.includes('?') ? '&' : '?'}v=${Date.now()}`, { 
             headers: getHeaders(name),
-            mode: 'cors',
-            signal: controller.signal
+            mode: 'cors'
           });
-          
-          clearTimeout(timeoutId);
-
           if (res.ok) {
             const data = await res.json();
             const list = Array.isArray(data) ? data : (data.data || data.contacts);
-            // v5.6: Se o servidor retornar sucesso mas uma lista nula/undefined, ele está em modo Zumbi
             if (list !== null && list !== undefined) { 
               successfulData = list;
               usedRoute = route;
@@ -176,11 +160,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       if (successfulData === null) {
         if (retryCount < 2) { 
-          // Espera exponencial para o próximo pulso
           await new Promise(r => setTimeout(r, 1500 * (retryCount + 1)));
           return loadContacts(retryCount + 1);
         }
-        throw new Error("Ponte Rompida: O terminal está ativo mas o acesso ao banco de dados foi negado pelo servidor (Zumbi). Clique em 'RECICLAR'.");
+        throw new Error("Ponte Rompida: O terminal está ativo mas o acesso ao banco de dados foi negado. Clique em 'RECICLAR'.");
       }
 
       setLastRouteUsed(`Overdrive Stable: ${usedRoute.includes('fetch') ? 'BAILEYS-CACHE' : 'SQL-LINK'}`);
@@ -196,7 +179,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       setContacts(filtered);
     } catch (e: any) {
-      console.error("[Neural Overdrive v5.6]", e);
       setApiError(e.message);
       setLastRouteUsed('Falha de Túnel');
     } finally {
@@ -204,22 +186,39 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   };
 
-  const handleAutoCreate = async () => {
-    if (isCreatingInstance) return;
+  const handleOpenNamingModal = () => {
+    setNewInstanceName('');
+    setIsNamingInstance(true);
+  };
+
+  const confirmCreateInstance = async () => {
+    if (isCreatingInstance || !newInstanceName) return;
     setIsCreatingInstance(true);
-    const autoName = `neural_${Math.random().toString(36).substring(7)}`;
+    setApiError(null);
     try {
       const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ instanceName: autoName, token: "wayflow_" + Math.random().toString(36).substring(5), integration: "WHATSAPP-BAILEYS", qrcode: true })
+        body: JSON.stringify({ 
+          instanceName: newInstanceName, 
+          token: "wayflow_" + Math.random().toString(36).substring(5), 
+          integration: "WHATSAPP-BAILEYS", 
+          qrcode: true 
+        })
       });
       if (res.ok) {
+        setIsNamingInstance(false);
         await fetchInstances();
-        await forceQRGeneration(autoName);
+        await forceQRGeneration(newInstanceName);
+      } else {
+        const err = await res.json();
+        setApiError(err.message || "Erro ao criar instância.");
       }
-    } catch (e) { setApiError("Falha na criação do cluster."); }
-    finally { setIsCreatingInstance(false); }
+    } catch (e) { 
+      setApiError("Falha na criação do cluster."); 
+    } finally { 
+      setIsCreatingInstance(false); 
+    }
   };
 
   const forceQRGeneration = async (instanceName: string) => {
@@ -291,8 +290,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <ChevronLeft size={16} className={!isSidebarExpanded ? 'rotate-180' : ''} />
             </button>
             <div className="flex flex-col">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-glow">WayFlow Neural v5.6</h2>
-              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Neural-Overdrive v5.6: ACTIVE</span>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-glow">WayFlow Neural v5.7</h2>
+              <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">Neural-Controller: ACTIVE</span>
             </div>
           </div>
           <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
@@ -341,7 +340,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         {isLoadingContacts ? (
                           <div className="flex flex-col items-center py-20 opacity-40 text-center">
                             <Loader2 className="animate-spin text-orange-500 mb-4" size={32} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic px-10">Neural Overdrive v5.6...</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic px-10">Neural Overdrive v5.7...</span>
                           </div>
                         ) : contacts.length > 0 ? (
                           contacts.map((contact, i) => (
@@ -364,7 +363,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                             {apiError && (
                               <div className="mt-8 p-6 rounded-3xl bg-red-500/5 border border-red-500/10 space-y-4">
                                 <p className="text-[8px] text-red-500 font-black uppercase tracking-widest flex items-center gap-2 justify-center"><ZapOff size={10}/> Ponte Zumbi</p>
-                                <p className="text-[9px] text-gray-500 lowercase leading-tight italic">{apiError}</p>
+                                <p className="text-[9px] text-gray-500 lowercase leading-tight italic text-center">{apiError}</p>
                                 <button 
                                   onClick={() => selectedInstance && recycleInstance(selectedInstance.name)}
                                   className="w-full py-3 bg-orange-500/10 border border-orange-500/20 rounded-xl text-[8px] font-black uppercase tracking-widest text-orange-500 hover:bg-orange-500 hover:text-white transition-all flex items-center justify-center gap-2"
@@ -381,7 +380,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     <Zap size={140} className="text-orange-500 opacity-[0.02] absolute animate-pulse" />
                     <div className="text-center space-y-6 z-10 p-12 glass border-white/5 rounded-[4rem]">
                        <h4 className="text-3xl font-black uppercase italic tracking-tighter text-white/10">Neural Hub Ready</h4>
-                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Overdrive v5.6</p>
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-800 italic">WayFlow Overdrive v5.7</p>
                     </div>
                   </div>
                 </motion.div>
@@ -391,11 +390,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      <div className="flex items-center justify-between border-b border-white/5 pb-12">
                         <div>
                            <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Terminais <span className="text-orange-500 text-glow">WayIA.</span></h2>
-                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Overdrive v5.6</p>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Evolution Engine v2.3.7 | Overdrive v5.7</p>
                         </div>
                         <div className="flex gap-4">
-                           <button onClick={handleAutoCreate} disabled={isCreatingInstance} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
-                             {isCreatingInstance ? <Loader2 className="animate-spin" size={16}/> : <Plus size={16} />} Nova Instância
+                           <button onClick={handleOpenNamingModal} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-[0_0_30px_rgba(255,115,0,0.3)]">
+                             <Plus size={16} /> Nova Instância
                            </button>
                         </div>
                      </div>
@@ -437,6 +436,39 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                   </div>
                 </motion.div>
              ) : null}
+           </AnimatePresence>
+
+           {/* NAMING MODAL */}
+           <AnimatePresence>
+             {isNamingInstance && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6">
+                   <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-md w-full glass p-10 rounded-[3rem] border-orange-500/20 space-y-8 relative shadow-2xl">
+                      <button onClick={() => setIsNamingInstance(false)} className="absolute top-8 right-8 text-gray-500 hover:text-white transition-all"><X size={20}/></button>
+                      <div className="text-center space-y-2">
+                        <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Identificar <span className="text-orange-500">Terminal</span></h3>
+                        <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center">Defina um nome exclusivo para este cluster neural</p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[8px] font-black uppercase text-orange-500 tracking-[0.3em] ml-2 flex items-center gap-2"><Edit3 size={10}/> Nome da Instância</label>
+                        <input 
+                          autoFocus
+                          type="text" 
+                          value={newInstanceName}
+                          onChange={(e) => setNewInstanceName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+                          placeholder="EX: ATENDIMENTO_SUL"
+                          className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-5 px-6 outline-none focus:border-orange-500/40 font-black text-sm text-white transition-all uppercase placeholder:opacity-20"
+                        />
+                      </div>
+                      <button 
+                        onClick={confirmCreateInstance}
+                        disabled={!newInstanceName || isCreatingInstance}
+                        className="w-full py-5 bg-orange-500 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white italic hover:bg-orange-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-orange-500/30 disabled:opacity-50 disabled:grayscale"
+                      >
+                        {isCreatingInstance ? <Loader2 className="animate-spin" size={16}/> : <><Zap size={16}/> Iniciar Tunelamento</>}
+                      </button>
+                   </motion.div>
+                </motion.div>
+             )}
            </AnimatePresence>
 
            {/* QR MODAL */}
