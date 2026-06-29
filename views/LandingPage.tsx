@@ -56,7 +56,17 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       </nav>
 
       {/* Hero Section */}
-      <header className="relative z-10 pt-44 pb-20 px-6 text-center">
+      <header className="relative z-10 pt-44 pb-20 px-6 text-center overflow-hidden">
+        {/* Fundo futurista do Hero */}
+        <div className="absolute inset-0 -z-10 pointer-events-none">
+          <div className="absolute inset-0 hero-aurora"></div>
+          <div className="absolute inset-0 grid-engine opacity-[0.07]"></div>
+          <div className="absolute inset-0 hero-scanlines opacity-30"></div>
+          <div className="hero-orb absolute top-10 left-1/4 w-72 h-72 bg-orange-600/20"></div>
+          <div className="hero-orb absolute top-32 right-1/4 w-80 h-80 bg-amber-500/15" style={{ animationDelay: '3s' }}></div>
+          <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#050505]"></div>
+        </div>
+
         <div className="max-w-6xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <span className="px-6 py-2.5 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)]">
