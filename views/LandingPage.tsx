@@ -14,18 +14,19 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
   const [isIntegrationActive, setIsIntegrationActive] = useState(true);
 
   const products = [
-    { 
-      title: "PetFlow Master", 
-      desc: "O Cérebro Digital do seu Pet Shop. Agenda Preditiva, Fidelização via WhatsApp e Controle de Estoque Inteligente.", 
-      icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logopetshop2-removebg-preview.png", 
-      color: "text-orange-500", 
-      tag: "Petshop"
+    {
+      title: "Pet360 sua Gestão",
+      desc: "O Cérebro Digital do seu Pet Shop. Agenda Preditiva, Fidelização via WhatsApp e Controle de Estoque Inteligente.",
+      icon: "/images/pet360-logo.png",
+      color: "text-orange-500",
+      tag: "Petshop",
+      link: "https://pet360.wayia.com.br/"
     },
-    { 
-      title: "ImobiVision 360", 
-      desc: "A Máquina de Vendas da Sua Imobiliária. Atendimento e qualificação de leads 24/7 com inteligência neural.", 
-      icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logoimobi-removebg-preview.png", 
-      color: "text-blue-500", 
+    {
+      title: "ImobiVision 360",
+      desc: "A Máquina de Vendas da Sua Imobiliária. Atendimento e qualificação de leads 24/7 com inteligência neural.",
+      icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logoimobi-removebg-preview.png",
+      color: "text-blue-500",
       tag: "Imobiliária"
     }
   ];

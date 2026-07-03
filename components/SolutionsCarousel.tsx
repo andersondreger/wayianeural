@@ -10,6 +10,7 @@ interface Product {
   icon: string;
   color: string;
   tag: string;
+  link?: string;
 }
 
 interface SolutionsCarouselProps {
@@ -17,9 +18,13 @@ interface SolutionsCarouselProps {
   onAction?: () => void;
 }
 
+const AUTOPLAY_MS = 9000;
+const SLIDE_TRANSITION = { duration: 1.1, ease: [0.22, 1, 0.36, 1] as const };
+
 export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps) {
   const [index, setIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [hovered, setHovered] = useState<number | null>(null);
   const count = products.length;
 
   const goTo = useCallback((i: number) => {
@@ -28,7 +33,7 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
 
   useEffect(() => {
     if (count <= 1 || isPaused) return;
-    const t = setInterval(() => goTo(index + 1), 5000);
+    const t = setInterval(() => goTo(index + 1), AUTOPLAY_MS);
     return () => clearInterval(t);
   }, [index, count, isPaused, goTo]);
 
@@ -39,41 +44,54 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
     return diff;
   };
 
+  const handleAction = (p: Product) => {
+    if (p.link) {
+      window.open(p.link, '_blank', 'noopener,noreferrer');
+    } else {
+      onAction?.();
+    }
+  };
+
   return (
     <div
       className="relative"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      <div className="relative h-[540px] flex items-center justify-center [perspective:1600px]">
+      <div className="relative h-[560px] flex items-center justify-center [perspective:1600px]">
         <div className="absolute w-[420px] h-[420px] rounded-full bg-orange-600/10 blur-[110px] pointer-events-none animate-pulse" />
         <div className="absolute inset-x-0 top-1/2 h-px bg-gradient-to-r from-transparent via-orange-500/20 to-transparent pointer-events-none" />
 
         {products.map((p, i) => {
           const offset = getOffset(i);
           const isActive = offset === 0;
+          const isHovered = hovered === i;
           const abs = Math.abs(offset);
           if (abs > 2) return null;
+
+          const baseScale = isActive ? 1 : 0.76 - (abs - 1) * 0.1;
 
           return (
             <motion.div
               key={i}
-              className="absolute w-[300px] md:w-[420px]"
-              style={{ zIndex: count - abs, cursor: isActive ? 'default' : 'pointer' }}
+              className="absolute w-[300px] md:w-[420px] h-[440px]"
+              style={{ zIndex: count - abs + (isHovered ? 10 : 0), cursor: isActive ? 'default' : 'pointer' }}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
               animate={{
                 x: offset * 270,
-                scale: isActive ? 1 : 0.76 - (abs - 1) * 0.1,
+                scale: isHovered ? baseScale + 0.05 : baseScale,
                 opacity: abs > 1 ? 0 : isActive ? 1 : 0.35,
                 rotateY: offset * -28,
                 filter: isActive ? 'blur(0px)' : 'blur(2px)',
               }}
-              transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+              transition={SLIDE_TRANSITION}
               onClick={() => !isActive && goTo(i)}
             >
               <div
-                className={`glass rounded-3xl border p-10 relative overflow-hidden transition-colors duration-500 ${
-                  isActive
-                    ? 'border-orange-500/40 shadow-[0_0_60px_rgba(255,115,0,0.15)]'
+                className={`h-full flex flex-col justify-between glass rounded-3xl border p-10 relative overflow-hidden transition-all duration-500 ${
+                  isActive || isHovered
+                    ? 'border-orange-500/50 shadow-[0_0_70px_rgba(255,115,0,0.2)]'
                     : 'border-white/5'
                 }`}
               >
@@ -83,12 +101,14 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
                 <div className="relative z-10 space-y-5">
                   <div className={`text-[10px] font-black uppercase tracking-widest ${p.color}`}>{p.tag}</div>
                   <h3 className="text-2xl md:text-3xl font-black uppercase italic tracking-tighter">{p.title}</h3>
-                  <p className="text-gray-500 text-xs md:text-sm font-bold uppercase leading-relaxed tracking-tight min-h-[80px]">
+                  <p className="text-gray-500 text-xs md:text-sm font-bold uppercase leading-relaxed tracking-tight">
                     {p.desc}
                   </p>
+                </div>
+                <div className="relative z-10">
                   {isActive && (
                     <GlassButton
-                      onClick={onAction}
+                      onClick={() => handleAction(p)}
                       className="!px-8 !py-4 !text-[10px] hover:bg-orange-500 hover:text-white transition-all"
                     >
                       Ativar Licença <ArrowUpRight size={14} className="inline ml-2" />
