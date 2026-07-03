@@ -17,7 +17,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
     {
       title: "Pet360 sua Gestão",
       desc: "O Cérebro Digital do seu Pet Shop. Agenda Preditiva, Fidelização via WhatsApp e Controle de Estoque Inteligente.",
-      icon: "/images/pet360-logo.png",
+      icon: "/images/pet360-hero-banner.jpg",
       color: "text-orange-500",
       tag: "Petshop",
       link: "https://pet360.wayia.com.br/",

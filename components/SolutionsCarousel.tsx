@@ -97,9 +97,12 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
                 }`}
               >
                 {p.bgFull ? (
-                  <div className="absolute inset-0 pointer-events-none">
-                    <img src={p.icon} className="w-full h-full object-cover" />
-                  </div>
+                  <>
+                    <div className="absolute inset-0 pointer-events-none">
+                      <img src={p.icon} className="w-full h-full object-cover object-left" />
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/30 pointer-events-none" />
+                  </>
                 ) : (
                   <div className="absolute -top-4 -right-8 w-56 h-56 opacity-20 pointer-events-none">
                     <img src={p.icon} className="w-full h-full object-contain" />
