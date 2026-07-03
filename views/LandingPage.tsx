@@ -20,7 +20,8 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       icon: "/images/pet360-logo.png",
       color: "text-orange-500",
       tag: "Petshop",
-      link: "https://pet360.wayia.com.br/"
+      link: "https://pet360.wayia.com.br/",
+      bgFull: true
     },
     {
       title: "ImobiVision 360",

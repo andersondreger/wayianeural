@@ -11,6 +11,7 @@ interface Product {
   color: string;
   tag: string;
   link?: string;
+  bgFull?: boolean;
 }
 
 interface SolutionsCarouselProps {
@@ -95,9 +96,15 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
                     : 'border-white/5'
                 }`}
               >
-                <div className="absolute -top-4 -right-8 w-56 h-56 opacity-20 pointer-events-none">
-                  <img src={p.icon} className="w-full h-full object-contain" />
-                </div>
+                {p.bgFull ? (
+                  <div className="absolute inset-0 pointer-events-none">
+                    <img src={p.icon} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="absolute -top-4 -right-8 w-56 h-56 opacity-20 pointer-events-none">
+                    <img src={p.icon} className="w-full h-full object-contain" />
+                  </div>
+                )}
                 <div className="relative z-10 space-y-5">
                   <div className={`text-[10px] font-black uppercase tracking-widest ${p.color}`}>{p.tag}</div>
                   <h3 className="text-2xl md:text-3xl font-black uppercase italic tracking-tighter">{p.title}</h3>
