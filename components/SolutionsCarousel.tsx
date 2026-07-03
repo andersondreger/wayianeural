@@ -110,8 +110,20 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
                 )}
                 <div className="relative z-10 space-y-5">
                   <div className={`text-[10px] font-black uppercase tracking-widest ${p.color}`}>{p.tag}</div>
-                  <h3 className="text-2xl md:text-3xl font-black uppercase italic tracking-tighter">{p.title}</h3>
-                  <p className="text-gray-500 text-xs md:text-sm font-bold uppercase leading-relaxed tracking-tight">
+                  <h3
+                    className={`text-2xl md:text-3xl font-black uppercase italic tracking-tighter ${
+                      p.bgFull ? 'text-white [text-shadow:0_0_10px_rgba(255,115,0,0.35)]' : ''
+                    }`}
+                  >
+                    {p.title}
+                  </h3>
+                  <p
+                    className={`text-xs md:text-sm font-bold uppercase leading-relaxed tracking-tight ${
+                      p.bgFull
+                        ? 'text-white [text-shadow:0_0_8px_rgba(255,115,0,0.3)]'
+                        : 'text-gray-500'
+                    }`}
+                  >
                     {p.desc}
                   </p>
                 </div>
