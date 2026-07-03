@@ -2,13 +2,13 @@
 import React, { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  ShieldCheck, BrainCircuit, Workflow, Terminal, Zap, 
-  Mail, MapPin, Instagram, Twitter, Linkedin, MessageCircle, 
-  ChevronRight, ArrowUpRight
+  ShieldCheck, BrainCircuit, Workflow, Terminal, Zap,
+  Mail, MapPin, Instagram, Twitter, Linkedin, MessageCircle
 } from 'lucide-react';
 import { NeonButton, GlassButton } from '../components/Buttons';
 import { GlassCard } from '../components/GlassCard';
 import { Logo } from '../components/Logo';
+import { SolutionsCarousel } from '../components/SolutionsCarousel';
 
 export function LandingPage({ onStart }: { onStart: () => void }) {
   const [isIntegrationActive, setIsIntegrationActive] = useState(true);
@@ -131,21 +131,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
              <h2 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">Modelos de <span className="text-orange-500">Alta Conversão.</span></h2>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-10">
-            {products.map((p, i) => (
-              <GlassCard key={i} className="group !p-12 border-white/5 hover:border-orange-500/30 transition-all duration-500 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-20 transition-opacity">
-                   <img src={p.icon} className="w-32 h-32 object-contain" />
-                </div>
-                <div className="relative z-10 space-y-6">
-                  <div className={`text-[10px] font-black uppercase tracking-widest ${p.color}`}>{p.tag}</div>
-                  <h3 className="text-3xl font-black uppercase italic tracking-tighter">{p.title}</h3>
-                  <p className="text-gray-500 text-sm font-bold uppercase leading-relaxed tracking-tight">{p.desc}</p>
-                  <GlassButton className="!px-8 !py-4 !text-[10px] group-hover:bg-orange-500 group-hover:text-white transition-all">Ativar Licença <ArrowUpRight size={14} className="inline ml-2"/></GlassButton>
-                </div>
-              </GlassCard>
-            ))}
-          </div>
+          <SolutionsCarousel products={products} onAction={onStart} />
         </div>
       </section>
 
