@@ -95,8 +95,8 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
                     : 'border-white/5'
                 }`}
               >
-                <div className="absolute top-0 right-0 p-6 opacity-10">
-                  <img src={p.icon} className="w-28 h-28 object-contain" />
+                <div className="absolute -top-4 -right-8 w-56 h-56 opacity-20 pointer-events-none">
+                  <img src={p.icon} className="w-full h-full object-contain" />
                 </div>
                 <div className="relative z-10 space-y-5">
                   <div className={`text-[10px] font-black uppercase tracking-widest ${p.color}`}>{p.tag}</div>
