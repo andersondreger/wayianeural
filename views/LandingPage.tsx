@@ -29,6 +29,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logoimobi-removebg-preview.png",
       color: "text-blue-500",
       tag: "Imobiliária"
+    },
+    {
+      title: "WayIA",
+      desc: "O Orquestrador Neural por trás de toda a operação. Conecta agentes, dados e automações em uma única inteligência.",
+      icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logo.png",
+      color: "text-orange-500",
+      tag: "Plataforma"
     }
   ];
 
@@ -114,7 +121,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
             <GlassCard className="!p-0 w-full overflow-hidden border-2 border-white/5 bg-black/40">
               <div className="animate-marquee py-12 flex items-center gap-32">
                 {[...integrations, ...integrations, ...integrations].map((logo, i) => (
-                  <div key={i} className="flex flex-col items-center gap-5 grayscale opacity-40 hover:grayscale-0 hover:opacity-100 transition-all duration-500 cursor-help">
+                  <div key={i} className="flex flex-col items-center gap-5 opacity-80 hover:opacity-100 hover:scale-110 transition-all duration-500 cursor-help">
                     <img src={logo.url} alt={logo.name} className="h-10 md:h-12 w-auto object-contain" />
                     <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">{logo.name}</span>
                   </div>
