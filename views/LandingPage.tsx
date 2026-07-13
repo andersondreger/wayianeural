@@ -26,8 +26,10 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
     {
       title: "ImobiVision 360",
       desc: "A Máquina de Vendas da Sua Imobiliária. Atendimento e qualificação de leads 24/7 com inteligência neural.",
+      icon: "/images/imob360-carousel.jpg",
       color: "text-blue-500",
-      tag: "Imobiliária"
+      tag: "Imobiliária",
+      bgFull: true
     },
     {
       title: "WayIA",
@@ -39,7 +41,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
     {
       title: "WayIA Criar",
       desc: "Construa sua marca sem ser designer. 129 bibliotecas de identidade visual, edição por chat e exportação em HTML — com sua própria API Key OpenAI/Anthropic.",
-      icon: "/images/wayia-criar-banner.jpg",
+      icon: "/images/wayia-criar-carousel.jpg",
       color: "text-pink-500",
       tag: "Designer",
       bgFull: true
