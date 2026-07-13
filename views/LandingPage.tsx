@@ -41,7 +41,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
     {
       title: "WayIA Criar",
       desc: "Construa sua marca sem ser designer. 129 bibliotecas de identidade visual, edição por chat e exportação em HTML — com sua própria API Key OpenAI/Anthropic.",
-      icon: "/images/wayia-criar-carousel.jpg",
+      icon: "/images/wayia-criar-carousel.png",
       color: "text-pink-500",
       tag: "Designer",
       bgFull: true
