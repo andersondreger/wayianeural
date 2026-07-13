@@ -36,6 +36,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logo.png",
       color: "text-orange-500",
       tag: "Plataforma"
+    },
+    {
+      title: "WayIA Criar",
+      desc: "Construa sua marca sem ser designer. 129 bibliotecas de identidade visual, edição por chat e exportação em HTML — com sua própria API Key OpenAI/Anthropic.",
+      icon: "/images/wayia-criar-banner.jpg",
+      color: "text-pink-500",
+      tag: "Designer"
     }
   ];
 
@@ -123,7 +130,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
                 {[...integrations, ...integrations, ...integrations].map((logo, i) => (
                   <div key={i} className="flex flex-col items-center gap-5 opacity-80 hover:opacity-100 hover:scale-110 transition-all duration-500 cursor-help">
                     <img src={logo.url} alt={logo.name} className="h-10 md:h-12 w-auto object-contain" />
-                    <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">{logo.name}</span>
+                    <span className="text-[8px] font-black uppercase tracking-[0.3em] text-white">{logo.name}</span>
                   </div>
                 ))}
               </div>

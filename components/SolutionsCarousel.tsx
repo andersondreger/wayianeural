@@ -90,7 +90,7 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
               onClick={() => !isActive && goTo(i)}
             >
               <div
-                className={`h-full flex flex-col justify-between glass rounded-3xl border p-10 relative overflow-hidden transition-all duration-500 ${
+                className={`h-full flex flex-col justify-end gap-6 glass rounded-3xl border p-10 relative overflow-hidden transition-all duration-500 ${
                   isActive || isHovered
                     ? 'border-orange-500/50 shadow-[0_0_70px_rgba(255,115,0,0.2)]'
                     : 'border-white/5'
