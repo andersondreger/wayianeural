@@ -32,11 +32,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       bgFull: true
     },
     {
-      title: "WayIA",
-      desc: "O Orquestrador Neural por trás de toda a operação. Conecta agentes, dados e automações em uma única inteligência.",
-      icon: "/images/wayia-logo.png",
-      color: "text-orange-500",
-      tag: "Plataforma"
+      title: "Bela360",
+      desc: "O WhatsApp do seu salão trabalhando sozinho. Confirma horário, lembra o cliente, chama quem sumiu e avisa aniversário — sem o dono precisar digitar nada.",
+      icon: "/images/bela360-carousel.png",
+      color: "text-pink-500",
+      tag: "Beleza",
+      link: "https://bela360.wayia.com.br/",
+      bgFull: true
     },
     {
       title: "WayIA Criar",
