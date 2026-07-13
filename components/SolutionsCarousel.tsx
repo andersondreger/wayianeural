@@ -7,7 +7,7 @@ import { GlassButton } from './Buttons';
 interface Product {
   title: string;
   desc: string;
-  icon: string;
+  icon?: string;
   color: string;
   tag: string;
   link?: string;
@@ -96,18 +96,18 @@ export function SolutionsCarousel({ products, onAction }: SolutionsCarouselProps
                     : 'border-white/5'
                 }`}
               >
-                {p.bgFull ? (
+                {p.bgFull && p.icon ? (
                   <>
                     <div className="absolute inset-0 pointer-events-none">
                       <img src={p.icon} className="w-full h-full object-cover object-left" />
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/30 pointer-events-none" />
                   </>
-                ) : (
+                ) : p.icon ? (
                   <div className="absolute -top-4 -right-8 w-56 h-56 opacity-20 pointer-events-none">
                     <img src={p.icon} className="w-full h-full object-contain" />
                   </div>
-                )}
+                ) : null}
                 <div className="relative z-10 space-y-5">
                   <div className={`text-[10px] font-black uppercase tracking-widest ${p.color}`}>{p.tag}</div>
                   <h3

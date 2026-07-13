@@ -29,14 +29,6 @@ export function ThankYouPage({ onGoToDashboard }: { onGoToDashboard: () => void 
     <div className="relative min-h-screen flex items-center justify-center p-4 md:p-6 overflow-hidden bg-[#050505]">
       {/* Background Neural Dinâmico */}
       <div className="absolute inset-0 z-0">
-        <motion.img 
-          initial={{ scale: 1.2, opacity: 0 }}
-          animate={{ scale: 1, opacity: 0.15 }}
-          transition={{ duration: 2 }}
-          src="https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/unnamed.jpg" 
-          className="w-full h-full object-cover" 
-          alt="Neural Background" 
-        />
         <div className="absolute inset-0 bg-gradient-to-b from-[#050505] via-transparent to-[#050505]"></div>
         <div className="absolute inset-0 grid-engine opacity-20"></div>
         

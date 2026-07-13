@@ -26,14 +26,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
     {
       title: "ImobiVision 360",
       desc: "A Máquina de Vendas da Sua Imobiliária. Atendimento e qualificação de leads 24/7 com inteligência neural.",
-      icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logoimobi-removebg-preview.png",
       color: "text-blue-500",
       tag: "Imobiliária"
     },
     {
       title: "WayIA",
       desc: "O Orquestrador Neural por trás de toda a operação. Conecta agentes, dados e automações em uma única inteligência.",
-      icon: "https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/logo.png",
+      icon: "/images/wayia-logo.png",
       color: "text-orange-500",
       tag: "Plataforma"
     },
@@ -42,7 +41,8 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       desc: "Construa sua marca sem ser designer. 129 bibliotecas de identidade visual, edição por chat e exportação em HTML — com sua própria API Key OpenAI/Anthropic.",
       icon: "/images/wayia-criar-banner.jpg",
       color: "text-pink-500",
-      tag: "Designer"
+      tag: "Designer",
+      bgFull: true
     }
   ];
 
