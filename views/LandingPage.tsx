@@ -40,11 +40,11 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
   ];
 
   const integrations = [
-    { name: 'Anthropic', url: '/images/integrations/anthropic.svg' },
-    { name: 'Meta', url: '/images/integrations/meta.svg' },
-    { name: 'OpenAI', url: '/images/integrations/openai.svg' },
-    { name: 'n8n', url: '/images/integrations/n8n.svg' },
-    { name: 'Make', url: '/images/integrations/make.svg' },
+    { name: 'Anthropic', url: '/images/integrations/anthropic.png' },
+    { name: 'Meta', url: '/images/integrations/meta.png' },
+    { name: 'OpenAI', url: '/images/integrations/openai.png' },
+    { name: 'n8n', url: '/images/integrations/n8n.png' },
+    { name: 'Make', url: '/images/integrations/make.png' },
   ];
 
   return (

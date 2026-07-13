@@ -151,9 +151,9 @@ export function ThankYouPage({ onGoToDashboard }: { onGoToDashboard: () => void 
 
         {/* Parceiros de Tecnologia */}
         <div className="pt-4 flex flex-wrap justify-center gap-8 md:gap-12 opacity-20 grayscale">
-            <img src="/images/integrations/openai.svg" className="h-3 md:h-4 object-contain" alt="OpenAI" />
-            <img src="/images/integrations/n8n.svg" className="h-3 md:h-4 object-contain" alt="n8n" />
-            <img src="/images/integrations/meta.svg" className="h-3 md:h-4 object-contain" alt="Meta" />
+            <img src="/images/integrations/openai.png" className="h-3 md:h-4 object-contain" alt="OpenAI" />
+            <img src="/images/integrations/n8n.png" className="h-3 md:h-4 object-contain" alt="n8n" />
+            <img src="/images/integrations/meta.png" className="h-3 md:h-4 object-contain" alt="Meta" />
         </div>
       </motion.div>
     </div>
