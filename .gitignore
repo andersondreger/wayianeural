@@ -17,6 +17,10 @@ dist-ssr
 out/
 next-env.d.ts
 .env*.local
+tsconfig.tsbuildinfo
+
+# Local scratch files (raw assets before processing)
+image/
 
 # Editor directories and files
 .vscode/*
