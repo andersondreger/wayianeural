@@ -151,9 +151,9 @@ export function ThankYouPage({ onGoToDashboard }: { onGoToDashboard: () => void 
 
         {/* Parceiros de Tecnologia */}
         <div className="pt-4 flex flex-wrap justify-center gap-8 md:gap-12 opacity-20 grayscale">
-            <img src="https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/images.png" className="h-3 md:h-4 object-contain" alt="OpenAI" />
-            <img src="https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/n8n-removebg-preview.png" className="h-3 md:h-4 object-contain" alt="n8n" />
-            <img src="https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/meta_ai-logo_brandlogos.net_xjwry-512x504.png" className="h-3 md:h-4 object-contain" alt="Meta" />
+            <img src="/images/integrations/openai.svg" className="h-3 md:h-4 object-contain" alt="OpenAI" />
+            <img src="/images/integrations/n8n.svg" className="h-3 md:h-4 object-contain" alt="n8n" />
+            <img src="/images/integrations/meta.svg" className="h-3 md:h-4 object-contain" alt="Meta" />
         </div>
       </motion.div>
     </div>

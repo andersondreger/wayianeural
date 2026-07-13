@@ -40,11 +40,11 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
   ];
 
   const integrations = [
-    { name: 'Anthropic', url: 'https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/images-removebg-preview.png' },
-    { name: 'Meta', url: 'https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/meta_ai-logo_brandlogos.net_xjwry-512x504.png' },
-    { name: 'OpenAI', url: 'https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/images.png' },
-    { name: 'n8n', url: 'https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/n8n-removebg-preview.png' },
-    { name: 'Make', url: 'https://qonrpzlkjhdmswjfxvtu.supabase.co/storage/v1/object/public/WayIAFlow/make-color.png' },
+    { name: 'Anthropic', url: '/images/integrations/anthropic.svg' },
+    { name: 'Meta', url: '/images/integrations/meta.svg' },
+    { name: 'OpenAI', url: '/images/integrations/openai.svg' },
+    { name: 'n8n', url: '/images/integrations/n8n.svg' },
+    { name: 'Make', url: '/images/integrations/make.svg' },
   ];
 
   return (
