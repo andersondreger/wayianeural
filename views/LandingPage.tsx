@@ -29,6 +29,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       icon: "/images/imob360-carousel.jpg",
       color: "text-blue-500",
       tag: "Imobiliária",
+      link: "https://imob360.wayia.com.br/",
       bgFull: true
     },
     {
@@ -46,6 +47,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       icon: "/images/wayia-criar-carousel.png",
       color: "text-pink-500",
       tag: "Designer",
+      link: "https://criar.wayia.com.br/",
       bgFull: true
     }
   ];
@@ -222,11 +224,11 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               <ul className="space-y-6">
                 <li className="flex items-center gap-4">
                   <div className="p-3 glass rounded-xl text-orange-500"><Mail size={16}/></div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">neural@wayflow.ai</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">contato@wayia.com.br</div>
                 </li>
                 <li className="flex items-center gap-4">
                   <div className="p-3 glass rounded-xl text-green-500"><MessageCircle size={16}/></div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">+55 (45) 99904-5858</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">+55 (45) 99139-7543</div>
                 </li>
               </ul>
             </div>
