@@ -49,6 +49,14 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       tag: "Designer",
       link: "https://criar.wayia.com.br/",
       bgFull: true
+    },
+    {
+      title: "WayAR",
+      desc: "Realidade Aumentada direto no navegador para todo o ecossistema. Modelos 3D que abrem por QR code, sem app pra baixar.",
+      icon: "/images/wayar-logo.png",
+      color: "text-cyan-400",
+      tag: "Realidade Aumentada",
+      link: "https://wayar.wayia.com.br/"
     }
   ];
 
