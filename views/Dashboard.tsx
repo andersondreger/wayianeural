@@ -26,6 +26,11 @@ interface DashboardProps {
 const EVOLUTION_URL = 'https://evo2.wayiaflow.com.br';
 const EVOLUTION_API_KEY = 'd86920ba398e31464c46401214779885';
 
+// Proxy dedicado (Cloudflare Worker) que guarda a chave do WayAR como secret
+// e repassa para a API publica do WayAR. Nunca chamar wayar.wayia.com.br
+// direto daqui, a chave nao pode ir pro navegador.
+const AR_PROXY_URL = 'https://wayianeural-ar-proxy.dreger-anderson.workers.dev';
+
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('instancias');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
@@ -42,6 +47,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [isNamingInstance, setIsNamingInstance] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
+
+  const [arExperiences, setArExperiences] = useState<any[]>([]);
+  const [isLoadingAr, setIsLoadingAr] = useState(false);
+  const [isCreatingAr, setIsCreatingAr] = useState(false);
+  const [isNamingAr, setIsNamingAr] = useState(false);
+  const [newArName, setNewArName] = useState('');
+  const [newArModelUrl, setNewArModelUrl] = useState('');
+  const [arError, setArError] = useState<string | null>(null);
 
   const getHeaders = (instanceName?: string) => {
     const headers: any = { 
@@ -272,11 +285,61 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     await fetchInstances();
   };
 
+  const fetchArExperiences = async () => {
+    setIsLoadingAr(true);
+    setArError(null);
+    try {
+      const res = await fetch(`${AR_PROXY_URL}/experiences`);
+      if (!res.ok) throw new Error('Falha ao consultar o WayAR.');
+      const data = await res.json();
+      setArExperiences(data.experiences || []);
+    } catch (e: any) {
+      setArError(e.message || 'Falha ao consultar o WayAR.');
+    } finally {
+      setIsLoadingAr(false);
+    }
+  };
+
+  const handleOpenArModal = () => {
+    setNewArName('');
+    setNewArModelUrl('');
+    setArError(null);
+    setIsNamingAr(true);
+  };
+
+  const confirmCreateAr = async () => {
+    if (!newArName || !newArModelUrl || isCreatingAr) return;
+    setIsCreatingAr(true);
+    setArError(null);
+    try {
+      const res = await fetch(`${AR_PROXY_URL}/experiences`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newArName, modelUrl: newArModelUrl }),
+      });
+      if (res.ok) {
+        setIsNamingAr(false);
+        await fetchArExperiences();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setArError(err.message || 'Erro ao criar experiencia de RA.');
+      }
+    } catch (e) {
+      setArError('Falha ao falar com o WayAR.');
+    } finally {
+      setIsCreatingAr(false);
+    }
+  };
+
   useEffect(() => {
     fetchInstances();
     const timer = setInterval(fetchInstances, 20000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'ar') fetchArExperiences();
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'atendimento' && selectedInstance) {
@@ -288,6 +351,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'atendimento', label: 'Atendimento', icon: MessageSquare },
     { id: 'instancias', label: 'Instâncias', icon: Server },
+    { id: 'ar', label: 'RA / WayAR', icon: Scan },
     { id: 'agentes', label: 'Agentes IA', icon: Bot },
     { id: 'settings', label: 'Ajustes', icon: Settings2 },
   ];
@@ -469,6 +533,59 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      </div>
                   </div>
                 </motion.div>
+             ) : activeTab === 'ar' ? (
+                <motion.div key="ar" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 p-12 overflow-y-auto custom-scrollbar">
+                  <div className="max-w-6xl mx-auto space-y-12">
+                     <div className="flex items-center justify-between border-b border-white/5 pb-12">
+                        <div>
+                           <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Realidade <span className="text-orange-500 text-glow">Aumentada.</span></h2>
+                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Experiencias de RA publicadas via WayAR</p>
+                        </div>
+                        <div className="flex gap-4">
+                           <button onClick={handleOpenArModal} className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all">
+                             <Plus size={16} /> Nova Experiencia
+                           </button>
+                        </div>
+                     </div>
+
+                     {arError && (
+                        <div className="px-6 py-4 rounded-2xl bg-red-500/5 border border-red-500/10 text-[10px] font-bold text-red-400 uppercase tracking-widest">{arError}</div>
+                     )}
+
+                     {isLoadingAr ? (
+                        <div className="flex flex-col items-center py-20 opacity-40 text-center">
+                          <Loader2 className="animate-spin text-orange-500 mb-6" size={44} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 italic">Consultando WayAR...</span>
+                        </div>
+                     ) : arExperiences.length === 0 ? (
+                        <div className="flex flex-col items-center py-24 opacity-30 text-center px-10">
+                          <Scan size={44} className="mb-6 text-orange-500" />
+                          <span className="text-[10px] font-black uppercase tracking-[0.3em] leading-relaxed">Nenhuma experiencia de RA ainda. Crie a primeira.</span>
+                        </div>
+                     ) : (
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                           {arExperiences.map(exp => (
+                              <div key={exp.id} className="glass p-8 rounded-[2.5rem] border-white/5 space-y-8 relative overflow-hidden group hover:border-orange-500/40 transition-all">
+                                 <div className="flex items-center justify-between relative z-10">
+                                    <div className="px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                       <Scan size={10} /> {exp.trackingType}
+                                    </div>
+                                 </div>
+                                 <div className="min-w-0 relative z-10">
+                                    <h4 className="text-[16px] font-black uppercase italic text-white truncate">{exp.name}</h4>
+                                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest truncate">{new Date(exp.createdAt).toLocaleDateString('pt-BR')}</p>
+                                 </div>
+                                 <div className="pt-2">
+                                    <a href={exp.embedUrl} target="_blank" rel="noopener noreferrer" className="w-full py-5 bg-orange-500/10 border border-orange-500/20 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] text-orange-500 hover:bg-orange-500 hover:text-white transition-all italic flex items-center justify-center gap-3">
+                                       <ExternalLink size={16} /> Abrir Experiencia
+                                    </a>
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+                </motion.div>
              ) : null}
            </AnimatePresence>
 
@@ -501,6 +618,54 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         className="w-full py-5 bg-orange-500 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white italic hover:bg-orange-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-orange-500/30"
                       >
                         {isCreatingInstance ? <Loader2 className="animate-spin" size={16}/> : <><Zap size={16}/> Configurar Terminal</>}
+                      </button>
+                   </motion.div>
+                </motion.div>
+             )}
+           </AnimatePresence>
+
+           {/* MODAL DE NOVA EXPERIENCIA DE RA */}
+           <AnimatePresence>
+             {isNamingAr && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6">
+                   <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="max-w-md w-full glass p-10 rounded-[3rem] border-orange-500/20 space-y-8 relative shadow-2xl">
+                      <button onClick={() => setIsNamingAr(false)} className="absolute top-8 right-8 text-gray-500 hover:text-white transition-all"><X size={20}/></button>
+                      <div className="text-center space-y-2">
+                        <h3 className="text-3xl font-black uppercase italic tracking-tighter text-white">Nova <span className="text-orange-500">Experiencia</span></h3>
+                        <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Publicada via WayAR</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-[8px] font-black uppercase text-orange-500 tracking-[0.3em] ml-2 flex items-center gap-2"><Edit3 size={10}/> Nome</label>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newArName}
+                          onChange={(e) => setNewArName(e.target.value)}
+                          placeholder="EX: SOFA MODELO X"
+                          className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-5 px-6 outline-none focus:border-orange-500/40 font-black text-sm text-white transition-all uppercase"
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-[8px] font-black uppercase text-orange-500 tracking-[0.3em] ml-2 flex items-center gap-2"><Link2 size={10}/> URL do modelo 3D (.glb)</label>
+                        <input
+                          type="text"
+                          value={newArModelUrl}
+                          onChange={(e) => setNewArModelUrl(e.target.value)}
+                          placeholder="https://.../modelo.glb"
+                          className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-5 px-6 outline-none focus:border-orange-500/40 font-bold text-sm text-white transition-all"
+                        />
+                      </div>
+
+                      {arError && <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest text-center">{arError}</p>}
+
+                      <button
+                        onClick={confirmCreateAr}
+                        disabled={!newArName || !newArModelUrl || isCreatingAr}
+                        className="w-full py-5 bg-orange-500 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white italic hover:bg-orange-600 transition-all flex items-center justify-center gap-3 shadow-lg shadow-orange-500/30"
+                      >
+                        {isCreatingAr ? <Loader2 className="animate-spin" size={16}/> : <><Scan size={16}/> Publicar no WayAR</>}
                       </button>
                    </motion.div>
                 </motion.div>
