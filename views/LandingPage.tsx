@@ -92,29 +92,46 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
         </div>
 
         <div className="max-w-6xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <span className="px-6 py-2.5 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)]">
-               <span className="text-orange-500 text-[10px] font-black uppercase tracking-[0.5em] italic">
-                 Engine v3.14 - Operando em Alta Frequência
-               </span>
-            </span>
-          </motion.div>
+          <div className="grid md:grid-cols-2 gap-12 items-center text-center md:text-left">
+            <div>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <span className="px-6 py-2.5 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)]">
+                   <span className="text-orange-500 text-[10px] font-black uppercase tracking-[0.5em] italic">
+                     Engine v3.14 - Operando em Alta Frequência
+                   </span>
+                </span>
+              </motion.div>
 
-          <motion.h1 
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-16 text-4xl md:text-6xl font-black uppercase leading-[1.0] tracking-tighter"
-          >
-            Potencialize sua <br />
-            <span className="text-orange-500 neon-glow italic">Operação de Escala.</span>
-          </motion.h1>
+              <motion.h1
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="mt-16 text-4xl md:text-6xl font-black uppercase leading-[1.0] tracking-tighter"
+              >
+                Potencialize sua <br />
+                <span className="text-orange-500 neon-glow italic">Operação de Escala.</span>
+              </motion.h1>
+            </div>
 
-          <motion.p 
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3 }}
+              className="flex justify-center md:justify-end"
+            >
+              <img
+                src="/images/hero-ar-avatar.png"
+                alt="Aponte a câmera do seu celular para ver a Realidade Aumentada"
+                className="w-full max-w-xs sm:max-w-sm md:max-w-md h-auto object-contain drop-shadow-[0_0_40px_rgba(255,115,0,0.25)]"
+              />
+            </motion.div>
+          </div>
+
+          <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
-            className="mt-10 text-gray-500 text-sm md:text-lg max-w-3xl mx-auto leading-relaxed font-bold uppercase tracking-[0.2em] opacity-80"
+            className="mt-10 text-gray-500 text-sm md:text-lg max-w-3xl mx-auto leading-relaxed font-bold uppercase tracking-[0.2em] opacity-80 text-center"
           >
             Solução unificada de alta performance: integrando automações de escala industrial e inteligência neural ao dia a dia do seu negócio
           </motion.p>
