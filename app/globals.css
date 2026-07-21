@@ -117,6 +117,21 @@
     0% { transform: translateX(0); }
     100% { transform: translateX(-33.33%); }
   }
+
+  .text-glow {
+    text-shadow: 0 0 30px rgba(255, 115, 0, 0.4);
+  }
+
+  @keyframes scan {
+    0% { top: 0%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  .animate-scan {
+    animation: scan 3s linear infinite;
+  }
 }
 
 .kanban-column {

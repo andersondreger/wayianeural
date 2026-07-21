@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  MessageSquare, LogOut, RefreshCw, Layers, ChevronLeft, Zap, 
-  Activity, LayoutDashboard, QrCode, Smartphone, DatabaseZap, 
+import {
+  MessageSquare, LogOut, RefreshCw, Layers, ChevronLeft, Zap,
+  Activity, LayoutDashboard, QrCode, Smartphone, DatabaseZap,
   Loader2, Scan, ChevronDown, Cpu, Network, Bot, Settings2,
   Server, ShieldCheck, Info, MessageCircle, MoreVertical,
   Plus, Trash2, Power, Wifi, WifiOff, X, CheckCircle2,
@@ -12,16 +12,25 @@ import {
   ShieldQuestion, Bug, Radio, RotateCcw, Fingerprint, HardDrive,
   Link, Shield, Cable, Braces, Unplug, LifeBuoy, ZapOff,
   Stethoscope, Waves, HeartPulse, Edit3, CloudLightning,
-  History, DatabaseBackup
+  History, DatabaseBackup, Home, Play, Crown, Bell
 } from 'lucide-react';
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
+import { products } from '../data/products';
 
 interface DashboardProps {
   user: UserSession;
   onLogout: () => void;
   onCheckout?: () => void;
 }
+
+const INTEGRATIONS = [
+  { name: 'Anthropic', url: '/images/integrations/anthropic.png' },
+  { name: 'Meta', url: '/images/integrations/meta.png' },
+  { name: 'OpenAI', url: '/images/integrations/openai.png' },
+  { name: 'n8n', url: '/images/integrations/n8n.png' },
+  { name: 'Make', url: '/images/integrations/make.png' },
+];
 
 const EVOLUTION_URL = 'https://evo2.wayiaflow.com.br';
 const EVOLUTION_API_KEY = 'd86920ba398e31464c46401214779885';
@@ -31,9 +40,10 @@ const EVOLUTION_API_KEY = 'd86920ba398e31464c46401214779885';
 // direto daqui, a chave nao pode ir pro navegador.
 const AR_PROXY_URL = 'https://wayianeural-ar-proxy.dreger-anderson.workers.dev';
 
-export function Dashboard({ user, onLogout }: DashboardProps) {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('instancias');
+export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  const [featuredIndex, setFeaturedIndex] = useState(0);
   const [instances, setInstances] = useState<any[]>([]);
   const [selectedInstance, setSelectedInstance] = useState<any | null>(null);
   const [contacts, setContacts] = useState<any[]>([]);
@@ -41,6 +51,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [isRepairing, setIsRepairing] = useState(false);
   const [lastRouteUsed, setLastRouteUsed] = useState<string>('');
   
+  const [searchQuery, setSearchQuery] = useState('');
   const [qrCodeData, setQrCodeData] = useState<{base64: string, name: string} | null>(null);
   const [isLoadingQR, setIsLoadingQR] = useState(false);
   const [isCreatingInstance, setIsCreatingInstance] = useState(false);
@@ -347,8 +358,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   }, [selectedInstance?.name, activeTab]);
 
+  useEffect(() => {
+    if (activeTab !== 'overview' || products.length <= 1) return;
+    const t = setInterval(() => setFeaturedIndex(i => (i + 1) % products.length), 7000);
+    return () => clearInterval(t);
+  }, [activeTab]);
+
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'overview', label: 'Home', icon: Home },
     { id: 'atendimento', label: 'Atendimento', icon: MessageSquare },
     { id: 'instancias', label: 'Instâncias', icon: Server },
     { id: 'ar', label: 'RA / WayAR', icon: Scan },
@@ -393,12 +410,120 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <span className="text-[7px] font-bold text-orange-500 uppercase tracking-widest italic text-glow">POSTGRES HEALTH: SYNCHRONIZED</span>
             </div>
           </div>
-          <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
+          <div className="flex items-center gap-6">
+            {activeTab === 'overview' && (
+              <div className="relative hidden md:block">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" size={14} />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar produtos..."
+                  className="w-64 bg-white/[0.03] border border-white/10 rounded-full py-2.5 pl-11 pr-4 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-orange-500/40 transition-all"
+                />
+              </div>
+            )}
+            <button className="text-gray-500 hover:text-orange-500 transition-colors"><Bell size={18} /></button>
+            <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
+          </div>
         </header>
 
         <div className="flex-1 flex overflow-hidden">
            <AnimatePresence mode="wait">
-             {activeTab === 'atendimento' ? (
+             {activeTab === 'overview' ? (
+                <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 overflow-y-auto custom-scrollbar">
+                   {(() => {
+                     const featured = products[featuredIndex % products.length];
+                     const filtered = searchQuery.trim()
+                       ? products.filter(p => (p.title + p.tag).toLowerCase().includes(searchQuery.trim().toLowerCase()))
+                       : products;
+                     return (
+                       <>
+                         <div className="relative h-[440px] shrink-0 overflow-hidden">
+                            <AnimatePresence mode="wait">
+                              <motion.div
+                                key={featured.title}
+                                initial={{ opacity: 0, scale: 1.05 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                                className="absolute inset-0"
+                              >
+                                <img src={featured.icon} alt={featured.title} className={`w-full h-full ${featured.bgFull ? 'object-cover' : 'object-contain bg-black py-16'}`} />
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent" />
+                                <div className="absolute inset-0 bg-gradient-to-r from-[#050505]/90 via-[#050505]/20 to-transparent" />
+                              </motion.div>
+                            </AnimatePresence>
+                            <div className="relative z-10 h-full flex flex-col justify-end px-12 pb-14 max-w-2xl space-y-5">
+                               <span className={`text-[10px] font-black uppercase tracking-[0.5em] italic ${featured.color}`}>{featured.tag}</span>
+                               <h1 className="text-5xl font-black uppercase italic tracking-tighter leading-[0.95] text-glow">{featured.title}</h1>
+                               <p className="text-gray-300 text-sm font-bold leading-relaxed max-w-lg">{featured.desc}</p>
+                               <div className="flex items-center gap-4 pt-2">
+                                  <a href={featured.link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[11px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/30">
+                                     <Play size={16} fill="currentColor" /> Acessar Agora
+                                  </a>
+                                  <div className="flex items-center gap-2 px-5 py-4 glass rounded-2xl border-green-500/20">
+                                     <CheckCircle2 size={14} className="text-green-500" />
+                                     <span className="text-[9px] font-black uppercase tracking-widest text-green-500">{featured.status}</span>
+                                  </div>
+                               </div>
+                            </div>
+                            <div className="absolute bottom-6 right-12 flex gap-2 z-10">
+                               {products.map((p, i) => (
+                                 <button key={p.title} onClick={() => setFeaturedIndex(i)} className={`h-1.5 rounded-full transition-all duration-500 ${i === featuredIndex % products.length ? 'w-8 bg-orange-500' : 'w-1.5 bg-white/20'}`} />
+                               ))}
+                            </div>
+                         </div>
+
+                         <div className="px-12 pt-10 space-y-6">
+                            <h3 className="text-2xl font-black uppercase italic tracking-tighter">Meus <span className="text-orange-500">Produtos.</span></h3>
+                            {filtered.length === 0 ? (
+                              <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest py-10">Nenhum produto encontrado para "{searchQuery}".</p>
+                            ) : (
+                              <div className="flex gap-6 overflow-x-auto custom-scrollbar pb-6 -mx-1 px-1">
+                                 {filtered.map(p => (
+                                    <a
+                                      key={p.title}
+                                      href={p.link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="group relative shrink-0 w-64 h-96 rounded-3xl overflow-hidden border border-white/5 hover:border-orange-500/40 transition-all duration-300 hover:-translate-y-2 shadow-xl"
+                                    >
+                                       <img src={p.icon} alt={p.title} className={`w-full h-full transition-transform duration-500 group-hover:scale-110 ${p.bgFull ? 'object-cover' : 'object-contain bg-black p-12'}`} />
+                                       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+                                       <div className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/70 border border-green-500/30">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                          <span className="text-[7px] font-black uppercase tracking-widest text-green-500">{p.status}</span>
+                                       </div>
+                                       <div className="absolute bottom-0 left-0 right-0 p-6 space-y-2">
+                                          <span className={`text-[8px] font-black uppercase tracking-[0.3em] italic ${p.color}`}>{p.tag}</span>
+                                          <h4 className="text-lg font-black uppercase italic tracking-tighter leading-tight">{p.title}</h4>
+                                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity pt-1">
+                                             <ExternalLink size={11} className="text-orange-500" />
+                                             <span className="text-[8px] font-black uppercase tracking-widest text-orange-500">Acessar</span>
+                                          </div>
+                                       </div>
+                                    </a>
+                                 ))}
+                              </div>
+                            )}
+                         </div>
+
+                         <div className="px-12 py-16 space-y-6">
+                            <h3 className="text-2xl font-black uppercase italic tracking-tighter">Integrações <span className="text-orange-500">Ativas.</span></h3>
+                            <div className="flex flex-wrap items-center gap-10 opacity-70">
+                               {INTEGRATIONS.map(logo => (
+                                 <div key={logo.name} className="flex flex-col items-center gap-3 hover:opacity-100 opacity-80 transition-all">
+                                    <img src={logo.url} alt={logo.name} className="h-9 w-auto object-contain" />
+                                    <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">{logo.name}</span>
+                                 </div>
+                               ))}
+                            </div>
+                         </div>
+                       </>
+                     );
+                   })()}
+                </motion.div>
+             ) : activeTab === 'atendimento' ? (
                 <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex overflow-hidden">
                   <div className="w-80 md:w-96 border-r border-white/5 flex flex-col bg-black/40 backdrop-blur-3xl">
                      <div className="p-8 border-b border-white/5 space-y-6">
@@ -586,6 +711,39 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                      )}
                   </div>
                 </motion.div>
+             ) : activeTab === 'settings' ? (
+                <motion.div key="settings" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 p-12 overflow-y-auto custom-scrollbar">
+                  <div className="max-w-3xl mx-auto space-y-12">
+                     <div className="border-b border-white/5 pb-12">
+                        <h2 className="text-5xl font-black uppercase italic tracking-tighter leading-none">Ajustes <span className="text-orange-500 text-glow">da Conta.</span></h2>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-4 italic">Perfil e assinatura WayFlow Neural</p>
+                     </div>
+
+                     <div className="glass p-8 rounded-[2.5rem] border-white/5 space-y-6">
+                        <div className="flex items-center gap-6">
+                           <div className="h-16 w-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xl shadow-lg">{user.name[0]}</div>
+                           <div>
+                              <h4 className="text-lg font-black uppercase italic">{user.name}</h4>
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{user.email}</p>
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="glass p-8 rounded-[2.5rem] border-orange-500/10 bg-orange-500/[0.01] space-y-6">
+                        <div className="flex items-center gap-3">
+                           <Crown className="text-orange-500" size={20} />
+                           <h4 className="text-xl font-black uppercase italic">Plano <span className="text-orange-500">Neural Full.</span></h4>
+                        </div>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest leading-relaxed">Libere WhatsApp ilimitado, IA de vendas e automação total de todo o ecossistema WayIA.</p>
+                        <button
+                           onClick={onCheckout}
+                           className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/30"
+                        >
+                           <Crown size={16} /> Ativar via PIX ou Cartão
+                        </button>
+                     </div>
+                  </div>
+                </motion.div>
              ) : null}
            </AnimatePresence>
 
@@ -711,12 +869,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
            )}
         </div>
       </main>
-
-      <style>{`
-        @keyframes scan { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
-        .animate-scan { animation: scan 4s linear infinite; }
-        .text-glow { text-shadow: 0 0 30px rgba(255, 115, 0, 0.4); }
-      `}</style>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { LandingPage } from './views/LandingPage';
 import { Dashboard } from './views/Dashboard';
 import { OnboardingPage } from './views/OnboardingPage';
 import { ThankYouPage } from './views/ThankYouPage';
+import { BusinessQuizData } from './components/BusinessQuiz';
 
 import { ViewState, UserSession } from './types';
 
@@ -68,6 +69,11 @@ export default function App() {
     setView('DASHBOARD');
   };
 
+  const handleCompleteQuiz = (data: BusinessQuizData) => {
+    setUser({ ...masterUser, name: data.businessName || masterUser.name });
+    setView('DASHBOARD');
+  };
+
   const handleLogout = () => {
     setUser(null);
     setView('LANDING');
@@ -91,18 +97,18 @@ export default function App() {
       <AnimatePresence mode="wait">
         {view === 'LANDING' && <LandingPage onStart={() => setView('ONBOARDING')} />}
         {view === 'ONBOARDING' && (
-          <OnboardingPage 
-            onRegisterTrial={handleRegisterTrial} 
+          <OnboardingPage
+            onRegisterTrial={handleRegisterTrial}
             onLogin={handleLogin}
-            onCheckout={() => window.open(CHECKOUT_LINK, '_blank')}
-            onBack={() => setView('LANDING')} 
+            onCompleteQuiz={handleCompleteQuiz}
+            onBack={() => setView('LANDING')}
           />
         )}
         {view === 'DASHBOARD' && user && (
-          <Dashboard 
-            user={user} 
-            onLogout={handleLogout} 
-            onCheckout={() => window.open(CHECKOUT_LINK, '_blank')} 
+          <Dashboard
+            user={user}
+            onLogout={handleLogout}
+            onCheckout={() => window.open(CHECKOUT_LINK, '_blank')}
           />
         )}
       </AnimatePresence>
