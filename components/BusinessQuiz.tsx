@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft, ArrowRight, Camera, PawPrint, Building2, Sparkles,
   ShoppingBag, Layers, ImagePlus, X, TrendingUp, MessageCircle,
-  Scan, HeartHandshake, CheckCircle2, ShieldCheck, Rocket
+  Scan, HeartHandshake, CheckCircle2, ShieldCheck, Rocket, User, Mail, Smartphone
 } from 'lucide-react';
 
 export interface BusinessQuizData {
@@ -12,6 +12,9 @@ export interface BusinessQuizData {
   segment: string;
   photoUrl: string | null;
   goals: string[];
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
 }
 
 const SEGMENTS = [
@@ -38,13 +41,16 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
   const [segment, setSegment] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [goals, setGoals] = useState<string[]>([]);
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lastStep = STEP_LABELS.length - 1;
 
   const goNext = () => {
     if (step >= lastStep) {
-      onComplete({ businessName, segment, photoUrl, goals });
+      onComplete({ businessName, segment, photoUrl, goals, contactName, contactEmail, contactPhone });
       return;
     }
     setDirection(1);
@@ -68,6 +74,7 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
 
   const canAdvance = step === 0 ? (businessName.trim().length > 0 && segment.length > 0)
     : step === 2 ? goals.length > 0
+    : step === 3 ? (contactName.trim().length > 0 && contactEmail.trim().length > 0 && contactPhone.trim().length > 0)
     : true;
 
   const variants = {
@@ -217,6 +224,43 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
                     )}
                   </div>
                 </div>
+
+                <div className="space-y-3">
+                  <label className="text-[8px] font-black uppercase text-gray-700 tracking-widest ml-1 block">Para onde enviamos sua Prévia?</label>
+                  <div className="relative">
+                    <User size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                    <input
+                      required
+                      placeholder="Seu nome"
+                      value={contactName}
+                      onChange={e => setContactName(e.target.value)}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-11 pr-5 outline-none focus:border-orange-500/40 font-bold transition-all text-sm"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                    <input
+                      required
+                      type="email"
+                      placeholder="Seu e-mail"
+                      value={contactEmail}
+                      onChange={e => setContactEmail(e.target.value)}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-11 pr-5 outline-none focus:border-orange-500/40 font-bold transition-all text-sm"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Smartphone size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                    <input
+                      required
+                      type="tel"
+                      placeholder="Seu WhatsApp (com DDD)"
+                      value={contactPhone}
+                      onChange={e => setContactPhone(e.target.value)}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-11 pr-5 outline-none focus:border-orange-500/40 font-bold transition-all text-sm"
+                    />
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-3 opacity-60">
                   <ShieldCheck size={14} className="text-orange-500" />
                   <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Seus dados ficam só com você, nunca compartilhamos.</span>

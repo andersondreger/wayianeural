@@ -102,6 +102,37 @@
     100% { transform: translateY(-30px) scale(1.15); }
   }
 
+  /* Ignição: trilhas e nós do circuito ganhando vida em neon ciano, contrastando com o laranja */
+  .circuit-overlay {
+    overflow: visible;
+  }
+
+  .circuit-trace {
+    fill: none;
+    stroke: #22d3ee;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-opacity: 0.9;
+    stroke-dasharray: 10 26;
+    filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.85)) drop-shadow(0 0 12px rgba(34, 211, 238, 0.35));
+    animation: circuit-flow 1.8s linear infinite;
+  }
+
+  @keyframes circuit-flow {
+    to { stroke-dashoffset: -72; }
+  }
+
+  .circuit-node {
+    fill: #22d3ee;
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.9));
+    animation: circuit-spark 2.2s ease-in-out infinite;
+  }
+
+  @keyframes circuit-spark {
+    0%, 100% { r: 3.5; opacity: 0.35; }
+    50% { r: 6.5; opacity: 1; }
+  }
+
   .custom-scrollbar::-webkit-scrollbar { width: 4px; }
   .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
   .custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }

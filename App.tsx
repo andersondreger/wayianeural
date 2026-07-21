@@ -70,7 +70,12 @@ export default function App() {
   };
 
   const handleCompleteQuiz = (data: BusinessQuizData) => {
-    setUser({ ...masterUser, name: data.businessName || masterUser.name });
+    setUser({
+      ...masterUser,
+      name: data.contactName || data.businessName || masterUser.name,
+      email: data.contactEmail || masterUser.email,
+      phone: data.contactPhone || undefined,
+    });
     setView('DASHBOARD');
   };
 

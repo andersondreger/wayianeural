@@ -49,6 +49,26 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
           <div className="absolute inset-0 hero-scanlines opacity-30"></div>
           <div className="hero-orb absolute top-10 left-1/4 w-72 h-72 bg-orange-600/20"></div>
           <div className="hero-orb absolute top-32 right-1/4 w-80 h-80 bg-amber-500/15" style={{ animationDelay: '3s' }}></div>
+          <svg
+            className="circuit-overlay absolute inset-0 w-full h-full opacity-70"
+            viewBox="0 0 1600 1000"
+            preserveAspectRatio="xMidYMin slice"
+          >
+            <polyline className="circuit-trace" style={{ animationDelay: '0s' }} points="0,180 220,180 260,140 460,140 500,180 800,180" />
+            <polyline className="circuit-trace" style={{ animationDelay: '0.3s' }} points="1600,120 1360,120 1320,160 1080,160 1040,120 760,120" />
+            <polyline className="circuit-trace" style={{ animationDelay: '0.6s' }} points="0,760 200,760 240,800 520,800" />
+            <polyline className="circuit-trace" style={{ animationDelay: '0.9s' }} points="1600,820 1420,820 1380,780 1120,780" />
+            <polyline className="circuit-trace" style={{ animationDelay: '1.2s' }} points="0,420 140,420 170,460 340,460" />
+            <polyline className="circuit-trace" style={{ animationDelay: '1.5s' }} points="1600,480 1480,480 1450,440 1260,440" />
+            <circle className="circuit-node" cx="260" cy="140" r="5" style={{ animationDelay: '0s' }} />
+            <circle className="circuit-node" cx="500" cy="180" r="5" style={{ animationDelay: '0.3s' }} />
+            <circle className="circuit-node" cx="1320" cy="160" r="5" style={{ animationDelay: '0.6s' }} />
+            <circle className="circuit-node" cx="1040" cy="120" r="5" style={{ animationDelay: '0.9s' }} />
+            <circle className="circuit-node" cx="240" cy="800" r="5" style={{ animationDelay: '1.2s' }} />
+            <circle className="circuit-node" cx="1380" cy="780" r="5" style={{ animationDelay: '1.5s' }} />
+            <circle className="circuit-node" cx="170" cy="460" r="5" style={{ animationDelay: '1.8s' }} />
+            <circle className="circuit-node" cx="1450" cy="440" r="5" style={{ animationDelay: '2.1s' }} />
+          </svg>
           <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#050505]"></div>
         </div>
 
