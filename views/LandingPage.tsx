@@ -144,7 +144,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
             <img
               src="/images/hero-ar-qrcode.png"
               alt="QR code para abrir a experiência de Realidade Aumentada da WayAR"
-              className="w-48 h-48 md:w-56 md:h-56 object-contain rounded-3xl drop-shadow-[0_0_30px_rgba(255,115,0,0.3)]"
+              className="w-64 h-64 md:w-80 md:h-80 object-contain rounded-3xl drop-shadow-[0_0_30px_rgba(255,115,0,0.3)]"
             />
           </motion.div>
 
