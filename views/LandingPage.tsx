@@ -127,6 +127,27 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
             </motion.div>
           </div>
 
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45 }}
+            className="mt-14 flex flex-col items-center gap-5"
+          >
+            <span className="px-8 py-3 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)] text-center">
+              <span className="block text-gray-300 text-[11px] md:text-xs font-bold uppercase tracking-[0.3em]">
+                Aponte a câmera do seu celular
+              </span>
+              <span className="block text-orange-500 text-lg md:text-2xl font-black uppercase italic neon-glow tracking-wide">
+                Para ver a RA
+              </span>
+            </span>
+            <img
+              src="/images/hero-ar-qrcode.png"
+              alt="QR code para abrir a experiência de Realidade Aumentada da WayAR"
+              className="w-48 h-48 md:w-56 md:h-56 object-contain rounded-3xl drop-shadow-[0_0_30px_rgba(255,115,0,0.3)]"
+            />
+          </motion.div>
+
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
