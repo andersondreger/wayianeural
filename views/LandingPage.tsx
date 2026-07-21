@@ -92,9 +92,9 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
         </div>
 
         <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center text-center md:text-left">
+          <div className="grid md:grid-cols-2 gap-12 items-start text-center">
             <div>
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex justify-center">
                 <span className="px-6 py-2.5 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)]">
                    <span className="text-orange-500 text-[10px] font-black uppercase tracking-[0.5em] italic">
                      Engine v3.14 - Operando em Alta Frequência
@@ -117,7 +117,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3 }}
-              className="flex flex-col items-center gap-5"
+              className="flex flex-col items-center gap-4 md:-mt-4"
             >
               <img
                 src="/images/hero-ar-avatar.png"
