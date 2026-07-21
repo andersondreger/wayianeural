@@ -117,7 +117,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3 }}
-              className="flex justify-center md:justify-end"
+              className="flex justify-center md:justify-end md:translate-x-6 lg:translate-x-12"
             >
               <img
                 src="/images/hero-ar-avatar.png"
