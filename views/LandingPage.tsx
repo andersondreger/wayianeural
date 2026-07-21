@@ -117,36 +117,28 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3 }}
-              className="flex justify-center md:justify-end md:translate-x-6 lg:translate-x-12"
+              className="flex flex-col items-center gap-5"
             >
               <img
                 src="/images/hero-ar-avatar.png"
                 alt="Aponte a câmera do seu celular para ver a Realidade Aumentada"
                 className="w-full max-w-[160px] sm:max-w-[192px] md:max-w-[224px] h-auto object-contain drop-shadow-[0_0_40px_rgba(255,115,0,0.25)]"
               />
+              <span className="px-8 py-3 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)] text-center">
+                <span className="block text-gray-300 text-[11px] md:text-xs font-bold uppercase tracking-[0.3em]">
+                  Aponte a câmera do seu celular
+                </span>
+                <span className="block text-orange-500 text-lg md:text-2xl font-black uppercase italic neon-glow tracking-wide">
+                  Para ver a RA
+                </span>
+              </span>
+              <img
+                src="/images/hero-ar-qrcode.png"
+                alt="QR code para abrir a experiência de Realidade Aumentada da WayAR"
+                className="w-64 h-64 md:w-80 md:h-80 object-contain rounded-3xl drop-shadow-[0_0_30px_rgba(255,115,0,0.3)]"
+              />
             </motion.div>
           </div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45 }}
-            className="mt-14 flex flex-col items-center gap-5"
-          >
-            <span className="px-8 py-3 rounded-full glass border border-orange-500/20 shadow-[0_0_20px_rgba(255,115,0,0.1)] text-center">
-              <span className="block text-gray-300 text-[11px] md:text-xs font-bold uppercase tracking-[0.3em]">
-                Aponte a câmera do seu celular
-              </span>
-              <span className="block text-orange-500 text-lg md:text-2xl font-black uppercase italic neon-glow tracking-wide">
-                Para ver a RA
-              </span>
-            </span>
-            <img
-              src="/images/hero-ar-qrcode.png"
-              alt="QR code para abrir a experiência de Realidade Aumentada da WayAR"
-              className="w-64 h-64 md:w-80 md:h-80 object-contain rounded-3xl drop-shadow-[0_0_30px_rgba(255,115,0,0.3)]"
-            />
-          </motion.div>
 
           <motion.p
             initial={{ opacity: 0 }}
