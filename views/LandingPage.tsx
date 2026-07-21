@@ -122,7 +122,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               <img
                 src="/images/hero-ar-avatar.png"
                 alt="Aponte a câmera do seu celular para ver a Realidade Aumentada"
-                className="w-full max-w-xs sm:max-w-sm md:max-w-md h-auto object-contain drop-shadow-[0_0_40px_rgba(255,115,0,0.25)]"
+                className="w-full max-w-[160px] sm:max-w-[192px] md:max-w-[224px] h-auto object-contain drop-shadow-[0_0_40px_rgba(255,115,0,0.25)]"
               />
             </motion.div>
           </div>
