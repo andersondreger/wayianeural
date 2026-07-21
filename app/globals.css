@@ -107,6 +107,22 @@
     overflow: visible;
   }
 
+  /* Passe esfumaçado: halo largo e desfocado atrás da trilha, dando o efeito de neon envolto em fumaça */
+  .circuit-trace-halo {
+    fill: none;
+    stroke: #67e8f9;
+    stroke-width: 9;
+    stroke-linecap: round;
+    opacity: 0.35;
+    filter: blur(7px);
+    animation: circuit-halo-breathe 3s ease-in-out infinite;
+  }
+
+  @keyframes circuit-halo-breathe {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.45; }
+  }
+
   .circuit-trace {
     fill: none;
     stroke: #22d3ee;
@@ -131,6 +147,29 @@
   @keyframes circuit-spark {
     0%, 100% { r: 3.5; opacity: 0.35; }
     50% { r: 6.5; opacity: 1; }
+  }
+
+  /* Ponto de luz viajando pela trilha, com halo esfumaçado forte ao redor do núcleo brilhante */
+  .circuit-spark-point {
+    fill: #ecfeff;
+    filter:
+      drop-shadow(0 0 3px #ffffff)
+      drop-shadow(0 0 10px rgba(34, 211, 238, 0.95))
+      drop-shadow(0 0 22px rgba(34, 211, 238, 0.6))
+      drop-shadow(0 0 38px rgba(34, 211, 238, 0.3));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-aurora,
+    .hero-orb,
+    .animate-marquee,
+    .animate-scan,
+    .circuit-trace,
+    .circuit-trace-halo,
+    .circuit-node,
+    .circuit-spark-point {
+      animation: none !important;
+    }
   }
 
   .custom-scrollbar::-webkit-scrollbar { width: 4px; }

@@ -1,6 +1,6 @@
 
 import React, { useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { 
   ShieldCheck, BrainCircuit, Workflow, Terminal, Zap,
   Mail, MapPin, Instagram, Twitter, Linkedin, MessageCircle
@@ -11,8 +11,27 @@ import { Logo } from '../components/Logo';
 import { SolutionsCarousel } from '../components/SolutionsCarousel';
 import { products } from '../data/products';
 
+// Trilhas do circuito de fundo do hero (mesmas coordenadas do SVG estático em .hero-bg-image)
+const CIRCUIT_PATHS: [number, number][][] = [
+  [[0, 180], [220, 180], [260, 140], [460, 140], [500, 180], [800, 180]],
+  [[1600, 120], [1360, 120], [1320, 160], [1080, 160], [1040, 120], [760, 120]],
+  [[0, 760], [200, 760], [240, 800], [520, 800]],
+  [[1600, 820], [1420, 820], [1380, 780], [1120, 780]],
+  [[0, 420], [140, 420], [170, 460], [340, 460]],
+  [[1600, 480], [1480, 480], [1450, 440], [1260, 440]],
+];
+
+const CIRCUIT_NODES: [number, number][] = [
+  [260, 140], [500, 180], [1320, 160], [1040, 120],
+  [240, 800], [1380, 780], [170, 460], [1450, 440],
+];
+
+const toPoints = (pts: [number, number][]) => pts.map(p => p.join(',')).join(' ');
+const toPathD = (pts: [number, number][]) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+
 export function LandingPage({ onStart }: { onStart: () => void }) {
   const [isIntegrationActive, setIsIntegrationActive] = useState(true);
+  const prefersReducedMotion = useReducedMotion();
 
   const integrations = [
     { name: 'Anthropic', url: '/images/integrations/anthropic.png' },
@@ -50,24 +69,24 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
           <div className="hero-orb absolute top-10 left-1/4 w-72 h-72 bg-orange-600/20"></div>
           <div className="hero-orb absolute top-32 right-1/4 w-80 h-80 bg-amber-500/15" style={{ animationDelay: '3s' }}></div>
           <svg
-            className="circuit-overlay absolute inset-0 w-full h-full opacity-70"
+            className="circuit-overlay absolute inset-0 w-full h-full opacity-80"
             viewBox="0 0 1600 1000"
             preserveAspectRatio="xMidYMin slice"
           >
-            <polyline className="circuit-trace" style={{ animationDelay: '0s' }} points="0,180 220,180 260,140 460,140 500,180 800,180" />
-            <polyline className="circuit-trace" style={{ animationDelay: '0.3s' }} points="1600,120 1360,120 1320,160 1080,160 1040,120 760,120" />
-            <polyline className="circuit-trace" style={{ animationDelay: '0.6s' }} points="0,760 200,760 240,800 520,800" />
-            <polyline className="circuit-trace" style={{ animationDelay: '0.9s' }} points="1600,820 1420,820 1380,780 1120,780" />
-            <polyline className="circuit-trace" style={{ animationDelay: '1.2s' }} points="0,420 140,420 170,460 340,460" />
-            <polyline className="circuit-trace" style={{ animationDelay: '1.5s' }} points="1600,480 1480,480 1450,440 1260,440" />
-            <circle className="circuit-node" cx="260" cy="140" r="5" style={{ animationDelay: '0s' }} />
-            <circle className="circuit-node" cx="500" cy="180" r="5" style={{ animationDelay: '0.3s' }} />
-            <circle className="circuit-node" cx="1320" cy="160" r="5" style={{ animationDelay: '0.6s' }} />
-            <circle className="circuit-node" cx="1040" cy="120" r="5" style={{ animationDelay: '0.9s' }} />
-            <circle className="circuit-node" cx="240" cy="800" r="5" style={{ animationDelay: '1.2s' }} />
-            <circle className="circuit-node" cx="1380" cy="780" r="5" style={{ animationDelay: '1.5s' }} />
-            <circle className="circuit-node" cx="170" cy="460" r="5" style={{ animationDelay: '1.8s' }} />
-            <circle className="circuit-node" cx="1450" cy="440" r="5" style={{ animationDelay: '2.1s' }} />
+            {CIRCUIT_PATHS.map((pts, i) => (
+              <g key={i}>
+                <polyline className="circuit-trace-halo" points={toPoints(pts)} style={{ animationDelay: `${i * 0.4}s` }} />
+                <polyline className="circuit-trace" points={toPoints(pts)} style={{ animationDelay: `${i * 0.3}s` }} />
+                {!prefersReducedMotion && (
+                  <circle className="circuit-spark-point" r="4">
+                    <animateMotion dur={`${2.6 + i * 0.35}s`} repeatCount="indefinite" path={toPathD(pts)} />
+                  </circle>
+                )}
+              </g>
+            ))}
+            {CIRCUIT_NODES.map(([cx, cy], i) => (
+              <circle key={i} className="circuit-node" cx={cx} cy={cy} r="5" style={{ animationDelay: `${i * 0.3}s` }} />
+            ))}
           </svg>
           <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#050505]"></div>
         </div>

@@ -65,16 +65,35 @@ export default function App() {
   };
 
   const handleRegisterTrial = (name: string, email: string) => {
-    setUser({ ...masterUser, name, email });
+    setUser({
+      ...masterUser,
+      name,
+      email,
+      isAdmin: email.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
+      subscriptionStatus: 'TRIALING',
+    });
     setView('DASHBOARD');
   };
 
   const handleCompleteQuiz = (data: BusinessQuizData) => {
+    supabase.from('quiz_leads').insert({
+      business_name: data.businessName,
+      segment: data.segment,
+      goals: data.goals,
+      contact_name: data.contactName,
+      contact_email: data.contactEmail,
+      contact_phone: data.contactPhone,
+    }).then(({ error }) => {
+      if (error) console.error('Falha ao salvar lead do quiz:', error.message);
+    });
+
     setUser({
       ...masterUser,
       name: data.contactName || data.businessName || masterUser.name,
       email: data.contactEmail || masterUser.email,
       phone: data.contactPhone || undefined,
+      isAdmin: data.contactEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
+      subscriptionStatus: 'TRIALING',
     });
     setView('DASHBOARD');
   };

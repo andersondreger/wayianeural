@@ -44,3 +44,21 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
 -- 3. Atualizar tabelas existentes para usar perfis
 ALTER TABLE agentes_ia ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contatos_crm ENABLE ROW LEVEL SECURITY;
+
+-- 4. Leads capturados no formulário interativo (Quiz de Negócio da Landing Page)
+CREATE TABLE IF NOT EXISTS public.quiz_leads (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_name TEXT NOT NULL,
+    segment TEXT NOT NULL,
+    goals TEXT[] DEFAULT '{}',
+    contact_name TEXT NOT NULL,
+    contact_email TEXT NOT NULL CHECK (contact_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
+    contact_phone TEXT NOT NULL CHECK (char_length(regexp_replace(contact_phone, '\D', '', 'g')) BETWEEN 10 AND 13),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.quiz_leads ENABLE ROW LEVEL SECURITY;
+
+-- O formulário é público (antes do login), então qualquer visitante pode enviar seus dados,
+-- mas somente o backend (service_role, que ignora RLS) pode listá-los depois.
+CREATE POLICY "Anyone can submit a quiz lead" ON public.quiz_leads FOR INSERT WITH CHECK (true);

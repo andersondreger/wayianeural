@@ -72,9 +72,15 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
     setPhotoUrl(url);
   };
 
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  const isValidPhone = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    return digits.length >= 10 && digits.length <= 13;
+  };
+
   const canAdvance = step === 0 ? (businessName.trim().length > 0 && segment.length > 0)
     : step === 2 ? goals.length > 0
-    : step === 3 ? (contactName.trim().length > 0 && contactEmail.trim().length > 0 && contactPhone.trim().length > 0)
+    : step === 3 ? (contactName.trim().length > 0 && isValidEmail(contactEmail) && isValidPhone(contactPhone))
     : true;
 
   const variants = {
@@ -248,6 +254,9 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
                       className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-11 pr-5 outline-none focus:border-orange-500/40 font-bold transition-all text-sm"
                     />
                   </div>
+                  {contactEmail.length > 0 && !isValidEmail(contactEmail) && (
+                    <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest ml-1">E-mail inválido</p>
+                  )}
                   <div className="relative">
                     <Smartphone size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
                     <input
@@ -259,6 +268,9 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
                       className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-11 pr-5 outline-none focus:border-orange-500/40 font-bold transition-all text-sm"
                     />
                   </div>
+                  {contactPhone.length > 0 && !isValidPhone(contactPhone) && (
+                    <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest ml-1">Telefone inválido (com DDD)</p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3 opacity-60">
