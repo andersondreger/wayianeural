@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WayIA — Inteligência Centralizada</title>
+<meta name="description" content="Solução unificada de alta performance: integrando automações de escala industrial e inteligência neural ao dia a dia do seu negócio.">
+<style>
+  :root{ --neon-orange:#ff7300; --bg-deep:#050505; --bg-deeper:#020202; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg-deep); color:#fff;
+    font-family:'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; overflow-x:hidden; }
+  img{ max-width:100%; display:block; }
+  a{ color:inherit; text-decoration:none; }
+  .uc{ text-transform:uppercase; }
+  .glass{ background:rgba(255,255,255,0.035); border:1px solid rgba(255,255,255,0.06); }
+  .glass-blur{ backdrop-filter:blur(28px); }
+  .neon-glow{ text-shadow:0 0 30px rgba(255,115,0,0.45); }
+  .grid-engine{ background-image:linear-gradient(rgba(255,115,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,115,0,0.05) 1px, transparent 1px); background-size:50px 50px; }
+  .fixed-grid{ position:fixed; inset:0; pointer-events:none; opacity:0.1; z-index:0; }
+
+  /* ---- badge / buttons ---- */
+  .badge{ display:inline-flex; padding:10px 24px; border-radius:999px; border:1px solid rgba(255,115,0,0.2); box-shadow:0 0 20px rgba(255,115,0,0.1); }
+  .badge span{ color:var(--neon-orange); font-size:10px; font-weight:900; letter-spacing:.5em; font-style:italic; }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; padding:20px 44px; border-radius:999px;
+    font-size:12px; font-weight:900; letter-spacing:.15em; text-transform:uppercase; cursor:pointer; border:none; }
+  .btn-neon{ background:linear-gradient(135deg,#ff7300,#ea580c); color:#fff; box-shadow:0 20px 50px -10px rgba(234,88,12,0.5); }
+  .btn-glass{ background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); color:#fff; }
+
+  /* ---- sections generic ---- */
+  section{ position:relative; z-index:1; }
+  .stage{ position:relative; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  .wrap{ max-width:1200px; margin:0 auto; padding:0 24px; width:100%; }
+  .eyebrow{ color:var(--neon-orange); font-weight:900; font-size:12px; letter-spacing:.5em; font-style:italic; }
+  h1,h2,h3{ font-weight:900; text-transform:uppercase; letter-spacing:-0.03em; margin:0; font-style:italic; line-height:.95; }
+  .prose{ color:#8a8a8a; font-weight:700; text-transform:uppercase; letter-spacing:.15em; line-height:1.7; }
+
+  /* ================= HERO ================= */
+  #hero{ min-height:100vh; padding:170px 0 0; text-align:center; }
+  #hero .bg{ position:absolute; inset:0; z-index:-1; }
+  .hero-bg-image{ position:absolute; inset:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1000' viewBox='0 0 1600 1000'%3E%3Cdefs%3E%3CradialGradient id='g1' cx='50%25' cy='0%25' r='75%25'%3E%3Cstop offset='0%25' stop-color='%23ff7300' stop-opacity='0.32'/%3E%3Cstop offset='55%25' stop-color='%23ff7300' stop-opacity='0.08'/%3E%3Cstop offset='100%25' stop-color='%23ff7300' stop-opacity='0'/%3E%3C/radialGradient%3E%3Cpattern id='hex' width='56' height='97' patternUnits='userSpaceOnUse'%3E%3Cpath d='M28 0 L56 16 L56 48 L28 64 L0 48 L0 16 Z' fill='none' stroke='%23ff7300' stroke-opacity='0.10' stroke-width='1'/%3E%3Cpath d='M28 32 L56 48 L56 80 L28 97 L0 80 L0 48 Z' fill='none' stroke='%23ff7300' stroke-opacity='0.10' stroke-width='1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='1600' height='1000' fill='%23050505'/%3E%3Crect width='1600' height='1000' fill='url(%23hex)'/%3E%3Crect width='1600' height='1000' fill='url(%23g1)'/%3E%3C/svg%3E");
+    background-size:cover; background-position:center top; }
+  .hero-aurora{ position:absolute; inset:0;
+    background:radial-gradient(60% 50% at 50% 0%, rgba(255,115,0,0.22) 0%, transparent 70%),
+      radial-gradient(40% 40% at 80% 20%, rgba(249,115,22,0.16) 0%, transparent 75%),
+      radial-gradient(45% 45% at 15% 30%, rgba(234,88,12,0.14) 0%, transparent 75%);
+    filter:blur(8px); animation:aurora-drift 14s ease-in-out infinite alternate; }
+  @keyframes aurora-drift{ 0%{transform:translate3d(0,0,0) scale(1);opacity:.85} 50%{transform:translate3d(2%,1.5%,0) scale(1.08);opacity:1} 100%{transform:translate3d(-2%,-1%,0) scale(1.04);opacity:.9} }
+  .hero-orb{ position:absolute; border-radius:999px; filter:blur(70px); animation:orb-float 12s ease-in-out infinite alternate; }
+  @keyframes orb-float{ 0%{transform:translateY(0) scale(1)} 100%{transform:translateY(-30px) scale(1.15)} }
+  #hero-logo{ height:56px; margin:0 auto 32px; filter:brightness(1.1) contrast(1.25); }
+  #hero h1{ font-size:clamp(32px,6vw,64px); }
+  .word{ display:inline-block; overflow:hidden; vertical-align:top; }
+  .word span{ display:inline-block; transform:translateY(120%); will-change:transform; }
+  #hero .sub{ margin-top:36px; max-width:760px; margin-left:auto; margin-right:auto; }
+  #hero .ctas{ margin-top:56px; display:flex; gap:20px; justify-content:center; flex-wrap:wrap; }
+  #hero .ar-block{ margin-top:56px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+  #hero .ar-block img.avatar{ width:180px; filter:drop-shadow(0 0 40px rgba(255,115,0,0.25)); }
+  #hero .ar-block img.qr{ width:200px; border-radius:24px; filter:drop-shadow(0 0 30px rgba(255,115,0,0.3)); }
+
+  /* particles (ambient, created AFTER pinned triggers) */
+  #particles{ position:absolute; inset:0; z-index:1; }
+
+  /* ================= CHAPTER: CHAOS ================= */
+  #chaos{ background:var(--bg-deeper); }
+  #chaos .node{ position:absolute; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; text-align:center; color:#666; }
+  #chaos .caption{ position:relative; z-index:2; max-width:640px; text-align:center; }
+
+  /* ================= CHAPTER: CONVERGE (circuit) ================= */
+  #converge{ background:var(--bg-deeper); }
+  .circuit-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .circuit-trace{ fill:none; stroke:#ff6a00; stroke-width:2; stroke-linecap:round; stroke-opacity:0; }
+  .circuit-node{ fill:#ff7a00; filter:drop-shadow(0 0 6px rgba(255,122,0,0.95)); opacity:0; }
+  #converge-core{ position:relative; z-index:2; text-align:center; opacity:0; }
+  #converge-core img{ width:110px; margin:0 auto 24px; }
+
+  /* ================= CHAPTER: CORE ================= */
+  #core{ background:#020202; }
+  #core .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; }
+  #core .chips{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  #core .chip{ padding:28px; border-radius:20px; }
+  #core .chip svg{ width:30px; height:30px; margin-bottom:16px; }
+  #core .chip .label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; line-height:1.3; }
+  #core h2{ font-size:clamp(34px,5vw,64px); }
+  @media (max-width:860px){ #core .grid2{ grid-template-columns:1fr; } }
+
+  /* ================= CHAPTER: NETWORK (horizontal pinned) ================= */
+  #network-driver{ height:400vh; position:relative; background:#020202; }
+  #network-stage{ position:sticky; top:0; height:100vh; overflow:hidden; }
+  #network-head{ text-align:center; padding:64px 24px 0; }
+  #network-track{ display:flex; gap:40px; padding:64px 12vw 0; width:max-content; will-change:transform; }
+  .prod-card{ width:min(78vw,460px); border-radius:28px; overflow:hidden; flex-shrink:0; }
+  .prod-card .img-wrap{ height:260px; overflow:hidden; }
+  .prod-card .img-wrap img{ width:100%; height:100%; object-fit:cover; }
+  .prod-card .body{ padding:28px; }
+  .prod-card .tag{ font-size:9px; font-weight:900; letter-spacing:.3em; }
+  .prod-card h3{ font-size:22px; margin:12px 0; font-style:normal; }
+  .prod-card p{ font-size:12px; color:#999; font-weight:600; text-transform:none; letter-spacing:normal; line-height:1.6; }
+  .prod-card .status{ display:inline-block; margin-top:14px; font-size:9px; font-weight:900; letter-spacing:.2em; padding:6px 14px; border-radius:999px; background:rgba(34,197,94,0.12); color:#4ade80; }
+
+  /* ================= MARQUEE ================= */
+  #marquee-section{ padding:60px 0; background:#020202; border-top:1px solid rgba(255,255,255,0.05); }
+  #marquee-track{ display:flex; width:max-content; gap:128px; align-items:center; will-change:transform; }
+  #marquee-track .item{ display:flex; flex-direction:column; align-items:center; gap:16px; opacity:.8; }
+  #marquee-track img{ height:40px; width:auto; object-fit:contain; }
+  #marquee-track .item span{ font-size:8px; font-weight:900; letter-spacing:.3em; text-transform:uppercase; }
+
+  /* ================= CLIP-PATH ROW ================= */
+  .clip-row{ padding:140px 24px; text-align:center; background:#020202; }
+  .clip-row .inner{ clip-path:inset(0 0 100% 0); max-width:820px; margin:0 auto; }
+  .clip-row h2{ font-size:clamp(28px,4.5vw,52px); }
+
+  /* ================= FOOTER / RESOLVE ================= */
+  footer{ background:#000; border-top:1px solid rgba(255,255,255,0.05); padding-top:120px; padding-bottom:64px; }
+  footer .grid4{ display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:80px; margin-bottom:90px; }
+  footer h4{ font-size:11px; font-weight:900; letter-spacing:.4em; color:var(--neon-orange); font-style:italic; text-transform:uppercase; }
+  footer ul{ list-style:none; padding:0; margin:24px 0 0; display:flex; flex-direction:column; gap:18px; }
+  footer li a{ font-size:10px; font-weight:700; letter-spacing:.15em; text-transform:uppercase; color:#888; }
+  footer .socials{ display:flex; gap:16px; margin-top:36px; }
+  footer .socials a{ width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#888; }
+  footer .socials svg{ width:16px; height:16px; }
+  footer .contact-row{ display:flex; align-items:center; gap:14px; margin-bottom:22px; }
+  footer .contact-row .ico{ padding:12px; border-radius:12px; }
+  footer .contact-row .txt{ font-size:9px; font-weight:900; letter-spacing:.15em; text-transform:uppercase; color:#aaa; }
+  footer .copyright{ padding-top:48px; border-top:1px solid rgba(255,255,255,0.05); text-align:center; }
+  footer .copyright div{ font-size:10px; font-weight:900; letter-spacing:.7em; color:#333; font-style:italic; text-transform:uppercase; }
+  @media (max-width:860px){ footer .grid4{ grid-template-columns:1fr 1fr; row-gap:56px; } }
+
+  @media (prefers-reduced-motion: reduce){
+    .hero-aurora,.hero-orb,#particles,.circuit-trace,.circuit-node{ animation:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="fixed-grid grid-engine"></div>
+
+<!-- NAV -->
+<nav style="position:fixed;top:0;left:0;right:0;z-index:100;border-bottom:1px solid rgba(255,255,255,0.05);backdrop-filter:blur(20px);background:rgba(0,0,0,0.4);">
+  <div class="wrap" style="max-width:1200px;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;">
+    <img src="/images/wayia-logo.png" alt="WayFlow Neural" style="height:40px;object-fit:contain;filter:brightness(1.1) contrast(1.25);">
+    <a href="https://wayia.com.br" class="btn btn-neon" style="padding:10px 24px;font-size:10px;">Acessar</a>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header id="hero">
+  <div class="bg">
+    <div class="hero-bg-image"></div>
+    <div class="hero-aurora"></div>
+    <div class="hero-orb" style="top:40px;left:22%;width:288px;height:288px;background:rgba(234,88,12,0.2);"></div>
+    <div class="hero-orb" style="top:128px;right:22%;width:320px;height:320px;background:rgba(245,158,11,0.15);animation-delay:3s;"></div>
+  </div>
+  <div id="particles"></div>
+
+  <div class="wrap">
+    <span class="badge"><span>Engine v3.14 — Operando em Alta Frequência</span></span>
+
+    <h1 style="margin-top:60px;" id="hero-title">
+      <span class="word"><span>Potencialize</span></span> <span class="word"><span>sua</span></span><br>
+      <span class="word" style="color:var(--neon-orange);"><span class="neon-glow">Operação</span></span>
+      <span class="word" style="color:var(--neon-orange);"><span class="neon-glow">de</span></span>
+      <span class="word" style="color:var(--neon-orange);"><span class="neon-glow">Escala.</span></span>
+    </h1>
+
+    <p class="prose sub" style="font-size:15px;">
+      Solução unificada de alta performance: integrando automações de escala industrial e
+      inteligência neural ao dia a dia do seu negócio
+    </p>
+
+    <div class="ctas">
+      <a href="https://wayia.com.br" class="btn btn-neon">Acesse Gratuitamente</a>
+      <a href="#network-driver" class="btn btn-glass">Explorar Ecossistema</a>
+    </div>
+
+    <div class="ar-block">
+      <img class="avatar" src="/images/hero-ar-avatar.png" alt="Aponte a câmera do seu celular para ver a Realidade Aumentada" decoding="async" width="192" height="192">
+      <span class="badge" style="flex-direction:column;padding:14px 32px;">
+        <span style="color:#ccc;letter-spacing:.3em;font-size:11px;">Aponte a câmera do seu celular</span>
+        <span style="color:var(--neon-orange);font-size:20px;font-style:italic;margin-top:4px;" class="neon-glow">Para ver a RA</span>
+      </span>
+      <img class="qr" src="/images/hero-ar-qrcode.png" alt="QR code para abrir a experiência de Realidade Aumentada da WayAR">
+    </div>
+  </div>
+</header>
+
+<!-- ============ CH.1 — RUÍDO (CHAOS) ============ -->
+<section id="chaos" class="stage">
+  <div class="wrap caption">
+    <span class="eyebrow">Antes</span>
+    <h2 style="font-size:clamp(26px,4.5vw,48px);margin-top:16px;">Cada sistema falando <br>uma língua diferente.</h2>
+    <p class="prose" style="margin-top:20px;font-size:12px;">
+      WhatsApp manual, agenda solta, planilha de estoque, CRM que ninguém atualiza —
+      cada ferramenta isolada, nenhuma conversando com a outra.
+    </p>
+  </div>
+</section>
+
+<!-- ============ CH.2 — CONVERGÊNCIA ============ -->
+<section id="converge" class="stage">
+  <svg class="circuit-svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+    <g id="circuit-group">
+      <polyline class="circuit-trace" points="0,180 220,180 260,140 460,140 500,180 800,180"></polyline>
+      <polyline class="circuit-trace" points="1600,120 1360,120 1320,160 1080,160 1040,120 760,120"></polyline>
+      <polyline class="circuit-trace" points="0,760 200,760 240,800 520,800"></polyline>
+      <polyline class="circuit-trace" points="1600,820 1420,820 1380,780 1120,780"></polyline>
+      <polyline class="circuit-trace" points="0,420 140,420 170,460 340,460"></polyline>
+      <polyline class="circuit-trace" points="1600,480 1480,480 1450,440 1260,440"></polyline>
+      <circle class="circuit-node" cx="260" cy="140" r="5"></circle>
+      <circle class="circuit-node" cx="500" cy="180" r="5"></circle>
+      <circle class="circuit-node" cx="1320" cy="160" r="5"></circle>
+      <circle class="circuit-node" cx="1040" cy="120" r="5"></circle>
+      <circle class="circuit-node" cx="240" cy="800" r="5"></circle>
+      <circle class="circuit-node" cx="1380" cy="780" r="5"></circle>
+      <circle class="circuit-node" cx="170" cy="460" r="5"></circle>
+      <circle class="circuit-node" cx="1450" cy="440" r="5"></circle>
+    </g>
+  </svg>
+  <div id="converge-core">
+    <img src="/images/wayia-logo.png" alt="WayFlow Neural">
+    <span class="eyebrow">Convergência</span>
+    <h2 style="font-size:clamp(26px,4.5vw,46px);margin-top:12px;">Um núcleo. <br>Um único cérebro digital.</h2>
+  </div>
+</section>
+
+<!-- ============ CH.3 — NÚCLEO / INTELIGÊNCIA CENTRALIZADA ============ -->
+<section id="core" style="padding:140px 0;">
+  <div class="wrap grid2">
+    <div class="chips">
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#ff7300" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M9 9h6v6H9z"></path><path d="M4 9h2M4 15h2M18 9h2M18 15h2M9 4v2M15 4v2M9 18v2M15 18v2"></path></svg>
+        <div class="label">Handshake Instantâneo</div></div>
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"></path></svg>
+        <div class="label">Cérebro Digital</div></div>
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="12" cy="18" r="2"></circle><path d="M6 8v3a2 2 0 002 2h2M18 8v3a2 2 0 01-2 2h-2M12 13v3"></path></svg>
+        <div class="label">Integração Total</div></div>
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="#facc15" stroke="none"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"></path></svg>
+        <div class="label">Escala Humana</div></div>
+    </div>
+    <div>
+      <h2>Inteligência <br><span style="color:var(--neon-orange);">Centralizada.</span></h2>
+      <p class="prose" style="margin-top:28px;font-size:16px;">
+        Esqueça os bots tradicionais. Entregamos um sistema nervoso digital orquestrado
+        para escala industrial.
+      </p>
+      <a href="https://wayia.com.br" class="btn btn-neon" style="margin-top:36px;">Teste Grátis</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CH.4 — REDE (horizontal pinned run) ============ -->
+<div id="network-driver">
+  <div id="network-stage">
+    <div id="network-head">
+      <span class="eyebrow">Soluções Verticais</span>
+      <h2 style="font-size:clamp(28px,5vw,56px);margin-top:16px;">Modelos de <span style="color:var(--neon-orange);">Alta Conversão.</span></h2>
+    </div>
+    <div id="network-track">
+      <!-- Pet360 -->
+      <a class="prod-card glass" href="https://pet360.wayia.com.br/" target="_blank" rel="noopener">
+        <div class="img-wrap"><img src="/images/pet360-hero-banner.jpg" alt="Pet360 sua Gestão" loading="lazy" decoding="async" width="920" height="520"></div>
+        <div class="body">
+          <span class="tag uc" style="color:#f97316;">Petshop</span>
+          <h3>Pet360 sua Gestão</h3>
+          <p>O Cérebro Digital do seu Pet Shop. Agenda Preditiva, Fidelização via WhatsApp e Controle de Estoque Inteligente.</p>
+          <span class="status">Ativo</span>
+        </div>
+      </a>
+      <!-- ImobiVision 360 -->
+      <a class="prod-card glass" href="https://imob360.wayia.com.br/" target="_blank" rel="noopener">
+        <div class="img-wrap"><img src="/images/imob360-carousel.jpg" alt="ImobiVision 360" loading="lazy" decoding="async" width="1200" height="800"></div>
+        <div class="body">
+          <span class="tag uc" style="color:#3b82f6;">Imobiliária</span>
+          <h3>ImobiVision 360</h3>
+          <p>A Máquina de Vendas da Sua Imobiliária. Atendimento e qualificação de leads 24/7 com inteligência neural.</p>
+          <span class="status">Ativo</span>
+        </div>
+      </a>
+      <!-- Bela360 -->
+      <a class="prod-card glass" href="https://bela360.wayia.com.br/" target="_blank" rel="noopener">
+        <div class="img-wrap"><img src="/images/bela360-carousel.png" alt="Bela360" loading="lazy" decoding="async" width="1200" height="800"></div>
+        <div class="body">
+          <span class="tag uc" style="color:#ec4899;">Beleza</span>
+          <h3>Bela360</h3>
+          <p>O WhatsApp do seu salão trabalhando sozinho. Confirma horário, lembra o cliente, chama quem sumiu e avisa aniversário — sem o dono precisar digitar nada.</p>
+          <span class="status">Ativo</span>
+        </div>
+      </a>
+      <!-- WayIA Criar -->
+      <a class="prod-card glass" href="https://criar.wayia.com.br/" target="_blank" rel="noopener">
+        <div class="img-wrap"><img src="/images/wayia-criar-carousel.png" alt="WayIA Criar" loading="lazy" decoding="async" width="1200" height="800"></div>
+        <div class="body">
+          <span class="tag uc" style="color:#ec4899;">Designer</span>
+          <h3>WayIA Criar</h3>
+          <p>Construa sua marca sem ser designer. 129 bibliotecas de identidade visual, edição por chat e exportação em HTML — com sua própria API Key OpenAI/Anthropic.</p>
+          <span class="status">Ativo</span>
+        </div>
+      </a>
+      <!-- WayAR -->
+      <a class="prod-card glass" href="https://wayar.wayia.com.br/" target="_blank" rel="noopener">
+        <div class="img-wrap" style="background:#0a0a0a;display:flex;align-items:center;justify-content:center;"><img src="/images/wayar-logo.png" alt="WayAR" style="width:60%;height:auto;object-fit:contain;" loading="lazy" decoding="async" width="600" height="600"></div>
+        <div class="body">
+          <span class="tag uc" style="color:#22d3ee;">Realidade Aumentada</span>
+          <h3>WayAR</h3>
+          <p>Realidade Aumentada direto no navegador para todo o ecossistema. Modelos 3D que abrem por QR code, sem app pra baixar.</p>
+          <span class="status">Ativo</span>
+        </div>
+      </a>
+      <!-- closing card -->
+      <div class="prod-card" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#ea580c,#ff7300);">
+        <div style="text-align:center;padding:28px;">
+          <div style="font-size:40px;font-weight:900;">05</div>
+          <div style="font-size:11px;font-weight:900;letter-spacing:.2em;text-transform:uppercase;margin-top:8px;">verticais orquestradas<br>por um único núcleo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CLIP-PATH EDITORIAL ROW ============ -->
+<div class="clip-row">
+  <div class="inner" id="clip-inner">
+    <h2>Infraestrutura tecnológica para <span style="color:var(--neon-orange);">empresas que não aceitam limites de escala.</span></h2>
+  </div>
+</div>
+
+<!-- ============ MARQUEE — Sincronização neural ativa ============ -->
+<section id="marquee-section">
+  <div style="text-align:center;margin-bottom:36px;">
+    <span class="eyebrow" style="font-size:10px;letter-spacing:.6em;opacity:.6;">Sincronização neural ativa</span>
+  </div>
+  <div class="wrap" style="overflow:hidden;">
+    <div class="glass" style="border-radius:24px;padding:12px 0;overflow:hidden;">
+      <div id="marquee-track">
+        <!-- duplicated 3x for seamless loop, built by JS -->
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER (resolve) ============ -->
+<footer>
+  <div class="wrap grid4">
+    <div>
+      <img src="/images/wayia-logo.png" alt="WayFlow Neural" style="height:40px;object-fit:contain;filter:brightness(1.1) contrast(1.25);">
+      <div class="socials">
+        <a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17.5" cy="6.5" r="1"></circle></svg></a>
+        <a href="#" aria-label="Twitter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z"></path></svg></a>
+        <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg></a>
+      </div>
+    </div>
+    <div>
+      <h4>Clusters</h4>
+      <ul>
+        <li><a href="https://pet360.wayia.com.br/">PetFlow Master</a></li>
+        <li><a href="https://imob360.wayia.com.br/">ImobiVision 360</a></li>
+        <li><a href="#">Neural CRM</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Legal</h4>
+      <ul>
+        <li><a href="#">Termos de Uso</a></li>
+        <li><a href="#">Privacidade</a></li>
+        <li><a href="#">Segurança TLS</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Direto</h4>
+      <div style="margin-top:24px;">
+        <div class="contact-row">
+          <div class="ico glass glass-blur" style="color:#ff7300;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M2 6l10 7 10-7"></path></svg></div>
+          <div class="txt">contato@wayia.com.br</div>
+        </div>
+        <div class="contact-row">
+          <div class="ico glass glass-blur" style="color:#22c55e;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H8l-5 4V5a2 2 0 012-2h14a2 2 0 012 2z"></path></svg></div>
+          <div class="txt">+55 (45) 99139-7543</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="copyright"><div>© 2025 WAYFLOW NEURAL TECHNOLOGIES. IMPARÁVEL.</div></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+<script>
+(function(){
+  var JUMP = new URLSearchParams(location.search).get('jump');
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  gsap.registerPlugin(ScrollTrigger);
+  if (JUMP !== null) history.scrollRestoration = 'manual';
+
+  // ---- Lenis + GSAP ticker wiring ----
+  var lenis = null;
+  if (!reduced) {
+    lenis = new Lenis({ lerp: 0.09, smoothWheel: true });
+    lenis.on('scroll', ScrollTrigger.update);
+    gsap.ticker.add(function(t){ lenis.raf(t * 1000); });
+    gsap.ticker.lagSmoothing(0);
+  }
+
+  // ================= build marquee (real integration logos) =================
+  var integrations = [
+    { name:'Anthropic', url:'/images/integrations/anthropic.png' },
+    { name:'Meta', url:'/images/integrations/meta.png' },
+    { name:'OpenAI', url:'/images/integrations/openai.png' },
+    { name:'n8n', url:'/images/integrations/n8n.png' },
+    { name:'Make', url:'/images/integrations/make.png' },
+  ];
+  var track = document.getElementById('marquee-track');
+  var html = '';
+  for (var r = 0; r < 3; r++) integrations.forEach(function(logo){
+    html += '<div class="item"><img src="'+logo.url+'" alt="'+logo.name+'"><span>'+logo.name+'</span></div>';
+  });
+  track.innerHTML = html;
+
+  // ============================================================
+  // CREATE ALL PINNED SCROLLTRIGGERS FIRST (ordering law)
+  // ============================================================
+
+  // ---- Ch.1 CHAOS: scattered node icons drift + fade ----
+  var chaosLabels = ['WhatsApp\nManual','Agenda\nde Papel','Planilha\nSolta','CRM\nParado','Estoque\nno Olho','Post-it'];
+  var chaosPositions = [
+    {top:'14%',left:'8%'},{top:'62%',left:'14%'},{top:'20%',left:'78%'},
+    {top:'68%',left:'74%'},{top:'42%',left:'46%'},{top:'10%',left:'50%'}
+  ];
+  var chaosWrap = document.querySelector('#chaos');
+  chaosLabels.forEach(function(label, i){
+    var el = document.createElement('div');
+    el.className = 'node glass';
+    el.style.top = chaosPositions[i].top;
+    el.style.left = chaosPositions[i].left;
+    el.style.whiteSpace = 'pre-line';
+    el.textContent = label;
+    chaosWrap.appendChild(el);
+  });
+  var chaosNodes = chaosWrap.querySelectorAll('.node');
+
+  if (!reduced) {
+    gsap.set(chaosNodes, { opacity: 0, scale: 0.6 });
+    gsap.timeline({
+      scrollTrigger: { trigger: '#chaos', start: 'top top', end: '+=140%', scrub: true, pin: true }
+    })
+    .to(chaosNodes, { opacity: 0.85, scale: 1, y: (i) => (i % 2 === 0 ? -30 : 30), stagger: 0.08, ease: 'power2.out' })
+    .to('#chaos .caption', { opacity: 0, y: -20 }, '<0.3')
+    .to(chaosNodes, { opacity: 0.15, filter: 'blur(2px)' }, '<');
+  } else {
+    gsap.set(chaosNodes, { opacity: 0.85 });
+  }
+
+  // ---- Ch.2 CONVERGE: circuit traces snap in, nodes spark, logo assembles ----
+  var traces = document.querySelectorAll('#converge .circuit-trace');
+  var nodes = document.querySelectorAll('#converge .circuit-node');
+  if (!reduced) {
+    gsap.set('#converge-core', { opacity: 0, scale: 0.8, y: 20 });
+    var tlConverge = gsap.timeline({
+      scrollTrigger: { trigger: '#converge', start: 'top top', end: '+=160%', scrub: true, pin: true }
+    });
+    tlConverge
+      .to(traces, { strokeOpacity: 0.95, stagger: 0.05, ease: 'power1.out' })
+      .to(nodes, { opacity: 1, stagger: 0.05 }, '<0.1')
+      .to('#converge-core', { opacity: 1, scale: 1, y: 0, ease: 'power3.out' }, '<0.2')
+      .to('#circuit-group', { opacity: 0.25 }, '>0.1');
+  } else {
+    gsap.set([traces, nodes, '#converge-core'], { opacity: 1, strokeOpacity: 1, scale: 1 });
+  }
+
+  // ---- Ch.3 CORE: chips + heading reveal ----
+  if (!reduced) {
+    gsap.set('#core .chip', { opacity: 0, y: 40 });
+    gsap.set('#core .grid2 > div:last-child > *', { opacity: 0, y: 30 });
+    gsap.timeline({ scrollTrigger: { trigger: '#core', start: 'top 70%', end: 'top 20%', scrub: true } })
+      .to('#core .chip', { opacity: 1, y: 0, stagger: 0.08 })
+      .to('#core .grid2 > div:last-child > *', { opacity: 1, y: 0, stagger: 0.08 }, '<0.1');
+  }
+
+  // ---- Ch.4 NETWORK: horizontal pinned run ----
+  var networkTrack = document.getElementById('network-track');
+  function networkDistance(){ return networkTrack.scrollWidth - window.innerWidth; }
+  gsap.to(networkTrack, {
+    x: () => -networkDistance(),
+    ease: 'none',
+    scrollTrigger: {
+      trigger: '#network-driver', start: 'top top', end: () => '+=' + (networkDistance() + window.innerHeight),
+      scrub: true, pin: '#network-stage', invalidateOnRefresh: true, anticipatePin: 1
+    }
+  });
+  // per-card parallax on the images inside the horizontal run
+  if (!reduced) {
+    document.querySelectorAll('.prod-card .img-wrap img').forEach(function(img){
+      gsap.fromTo(img, { xPercent: -6 }, {
+        xPercent: 6, ease: 'none',
+        scrollTrigger: { trigger: '#network-driver', containerAnimation: gsap.getTweensOf(networkTrack)[0].scrollTrigger.animation, start: 'left center', end: 'right center', scrub: true }
+      });
+    });
+  }
+
+  // ---- Clip-path editorial reveal ----
+  gsap.to('#clip-inner', {
+    clipPath: 'inset(0 0 0% 0)', ease: 'power2.out',
+    scrollTrigger: { trigger: '.clip-row', start: 'top 75%', end: 'top 35%', scrub: true }
+  });
+
+  // ============================================================
+  // AMBIENT / NON-PINNED TRIGGERS — created AFTER the pinned ones
+  // ============================================================
+
+  // ---- hero char-split reveal (once, on load) ----
+  gsap.from('.word span', { yPercent: 120, stagger: 0.05, duration: 1, ease: 'power4.out', delay: 0.1 });
+  gsap.from('.badge, .sub, .ctas, .ar-block', { opacity: 0, y: 20, stagger: 0.12, duration: 0.8, delay: 0.5 });
+
+  // ---- marquee velocity-skew drift ----
+  if (!reduced) {
+    var mq = gsap.to('#marquee-track', { xPercent: -50, ease: 'none', duration: 30, repeat: -1 });
+    ScrollTrigger.create({
+      onUpdate: function(self){
+        var v = gsap.utils.clamp(-20, 20, self.getVelocity() / 300);
+        gsap.to('#marquee-track', { skewX: v, duration: 0.3, overwrite: 'auto' });
+      }
+    });
+  }
+
+  // ---- ambient hero particles (fades out over first 7% of scroll) ----
+  if (!reduced) {
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+    document.getElementById('particles').appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    var DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+    function resize(){ canvas.width = window.innerWidth * DPR; canvas.height = window.innerHeight * DPR; canvas.style.width = window.innerWidth+'px'; canvas.style.height = window.innerHeight+'px'; }
+    resize(); window.addEventListener('resize', resize);
+
+    var sprite = document.createElement('canvas'); sprite.width = 32; sprite.height = 32;
+    var sctx = sprite.getContext('2d');
+    var grad = sctx.createRadialGradient(16,16,0,16,16,16);
+    grad.addColorStop(0, 'rgba(255,180,80,0.9)'); grad.addColorStop(1, 'rgba(255,115,0,0)');
+    sctx.fillStyle = grad; sctx.fillRect(0,0,32,32);
+
+    var particles = [];
+    for (var i=0;i<36;i++) particles.push({
+      x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight,
+      s: 6+Math.random()*14, sp: 0.1+Math.random()*0.3, ph: Math.random()*Math.PI*2
+    });
+    var alpha = 1, raf;
+    function loop(t){
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if (alpha > 0.01) {
+        particles.forEach(function(p){
+          p.y -= p.sp; if (p.y < -20) p.y = window.innerHeight + 20;
+          var tw = 0.6 + 0.4*Math.sin(t/700 + p.ph);
+          ctx.globalAlpha = alpha * tw * 0.8;
+          ctx.drawImage(sprite, p.x - p.s/2, p.y - p.s/2, p.s, p.s);
+        });
+        raf = requestAnimationFrame(loop);
+      }
+    }
+    raf = requestAnimationFrame(loop);
+    ScrollTrigger.create({
+      trigger: '#hero', start: 'top top', end: '+=7%', scrub: true,
+      onUpdate: function(self){ alpha = 1 - self.progress; if (alpha > 0.01 && !raf) raf = requestAnimationFrame(loop); }
+    });
+  }
+
+  // ============================================================
+  // DEV CONTRACT
+  // ============================================================
+  ScrollTrigger.refresh();
+  if (JUMP !== null) {
+    scrollTo(0, +JUMP || 0);
+    ScrollTrigger.update();
+  }
+  window.__ready = true;
+
+  // jank meter (console only)
+  var last = performance.now(), maxDelta = 0;
+  function jankTick(now){
+    var d = now - last; last = now; if (d > maxDelta) maxDelta = d;
+    requestAnimationFrame(jankTick);
+  }
+  requestAnimationFrame(jankTick);
+  setInterval(function(){ console.log('[jank] max frame delta:', maxDelta.toFixed(1)+'ms'); maxDelta = 0; }, 2000);
+})();
+</script>
+</body>
+</html>
