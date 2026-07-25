@@ -29,14 +29,13 @@
 
   /* ---- sections generic ---- */
   section{ position:relative; z-index:1; }
-  .stage{ position:relative; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; }
   .wrap{ max-width:1200px; margin:0 auto; padding:0 24px; width:100%; }
   .eyebrow{ color:var(--neon-orange); font-weight:900; font-size:12px; letter-spacing:.5em; font-style:italic; }
   h1,h2,h3{ font-weight:900; text-transform:uppercase; letter-spacing:-0.03em; margin:0; font-style:italic; line-height:.95; }
   .prose{ color:#8a8a8a; font-weight:700; text-transform:uppercase; letter-spacing:.15em; line-height:1.7; }
 
-  /* ================= HERO ================= */
-  #hero{ min-height:100vh; padding:170px 0 0; text-align:center; }
+  /* ================= HERO — Seção 1 ================= */
+  #hero{ min-height:100vh; padding:170px 0 120px; text-align:center; }
   #hero .bg{ position:absolute; inset:0; z-index:-1; }
   .hero-bg-image{ position:absolute; inset:0;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1000' viewBox='0 0 1600 1000'%3E%3Cdefs%3E%3CradialGradient id='g1' cx='50%25' cy='0%25' r='75%25'%3E%3Cstop offset='0%25' stop-color='%23ff7300' stop-opacity='0.32'/%3E%3Cstop offset='55%25' stop-color='%23ff7300' stop-opacity='0.08'/%3E%3Cstop offset='100%25' stop-color='%23ff7300' stop-opacity='0'/%3E%3C/radialGradient%3E%3Cpattern id='hex' width='56' height='97' patternUnits='userSpaceOnUse'%3E%3Cpath d='M28 0 L56 16 L56 48 L28 64 L0 48 L0 16 Z' fill='none' stroke='%23ff7300' stroke-opacity='0.10' stroke-width='1'/%3E%3Cpath d='M28 32 L56 48 L56 80 L28 97 L0 80 L0 48 Z' fill='none' stroke='%23ff7300' stroke-opacity='0.10' stroke-width='1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='1600' height='1000' fill='%23050505'/%3E%3Crect width='1600' height='1000' fill='url(%23hex)'/%3E%3Crect width='1600' height='1000' fill='url(%23g1)'/%3E%3C/svg%3E");
@@ -53,7 +52,6 @@
   #hero h1{ font-size:clamp(32px,6vw,64px); }
   .word{ display:inline-block; overflow:hidden; vertical-align:top; }
   .word span{ display:inline-block; transform:translateY(120%); will-change:transform; }
-  #hero .sub{ margin-top:36px; max-width:760px; margin-left:auto; margin-right:auto; }
   #hero .ctas{ margin-top:56px; display:flex; gap:20px; justify-content:center; flex-wrap:wrap; }
   #hero .ar-block{ margin-top:56px; display:flex; flex-direction:column; align-items:center; gap:16px; }
   #hero .ar-block img.avatar{ width:180px; filter:drop-shadow(0 0 40px rgba(255,115,0,0.25)); }
@@ -62,31 +60,21 @@
   /* particles (ambient, created AFTER pinned triggers) */
   #particles{ position:absolute; inset:0; z-index:1; }
 
-  /* ================= CHAPTER: CHAOS ================= */
-  #chaos{ background:var(--bg-deeper); }
-  #chaos .node{ position:absolute; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center;
-    font-size:10px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; text-align:center; color:#666; }
-  #chaos .caption{ position:relative; z-index:2; max-width:640px; text-align:center; }
+  /* ================= UNIFIED — Seção 2 ================= */
+  #unified{ padding:180px 0 120px; text-align:center; background:var(--bg-deeper); overflow:hidden; }
+  #unified .headline{ font-style:normal; font-weight:800; text-transform:uppercase; letter-spacing:.01em;
+    color:#d6d6d6; line-height:1.5; font-size:clamp(20px,3.2vw,32px); }
+  #unified .ctas{ margin-top:48px; display:flex; gap:20px; justify-content:center; flex-wrap:wrap; }
+  #unified .sync-label{ margin-top:130px; }
 
-  /* ================= CHAPTER: CONVERGE (circuit) ================= */
-  #converge{ background:var(--bg-deeper); }
-  .circuit-svg{ position:absolute; inset:0; width:100%; height:100%; }
-  .circuit-trace{ fill:none; stroke:#ff6a00; stroke-width:2; stroke-linecap:round; stroke-opacity:0; }
-  .circuit-node{ fill:#ff7a00; filter:drop-shadow(0 0 6px rgba(255,122,0,0.95)); opacity:0; }
-  #converge-core{ position:relative; z-index:2; text-align:center; opacity:0; }
-  #converge-core img{ width:110px; margin:0 auto 24px; }
+  /* ================= MARQUEE ================= */
+  #marquee-wrap{ margin-top:36px; overflow:hidden; }
+  #marquee-track{ display:flex; width:max-content; gap:128px; align-items:center; will-change:transform; }
+  #marquee-track .item{ display:flex; flex-direction:column; align-items:center; gap:16px; opacity:.8; }
+  #marquee-track img{ height:40px; width:auto; object-fit:contain; }
+  #marquee-track .item span{ font-size:8px; font-weight:900; letter-spacing:.3em; text-transform:uppercase; }
 
-  /* ================= CHAPTER: CORE ================= */
-  #core{ background:#020202; }
-  #core .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; }
-  #core .chips{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-  #core .chip{ padding:28px; border-radius:20px; }
-  #core .chip svg{ width:30px; height:30px; margin-bottom:16px; }
-  #core .chip .label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; line-height:1.3; }
-  #core h2{ font-size:clamp(34px,5vw,64px); }
-  @media (max-width:860px){ #core .grid2{ grid-template-columns:1fr; } }
-
-  /* ================= CHAPTER: NETWORK (horizontal pinned) ================= */
+  /* ================= NETWORK — Seção 3, carrossel (horizontal pinned run) ================= */
   #network-driver{ height:400vh; position:relative; background:#020202; }
   #network-stage{ position:sticky; top:0; height:100vh; overflow:hidden; }
   #network-head{ text-align:center; padding:64px 24px 0; }
@@ -99,25 +87,28 @@
   .prod-card h3{ font-size:22px; margin:12px 0; font-style:normal; }
   .prod-card p{ font-size:12px; color:#999; font-weight:600; text-transform:none; letter-spacing:normal; line-height:1.6; }
   .prod-card .status{ display:inline-block; margin-top:14px; font-size:9px; font-weight:900; letter-spacing:.2em; padding:6px 14px; border-radius:999px; background:rgba(34,197,94,0.12); color:#4ade80; }
+  .carousel-hint{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:28px; opacity:.55; }
+  .carousel-hint span{ font-size:9px; font-weight:900; letter-spacing:.3em; text-transform:uppercase; }
+  .carousel-hint svg{ width:16px; height:16px; animation:hint-slide 1.6s ease-in-out infinite; }
+  @keyframes hint-slide{ 0%,100%{transform:translateX(0);opacity:.5} 50%{transform:translateX(6px);opacity:1} }
 
-  /* ================= MARQUEE ================= */
-  #marquee-section{ padding:60px 0; background:#020202; border-top:1px solid rgba(255,255,255,0.05); }
-  #marquee-track{ display:flex; width:max-content; gap:128px; align-items:center; will-change:transform; }
-  #marquee-track .item{ display:flex; flex-direction:column; align-items:center; gap:16px; opacity:.8; }
-  #marquee-track img{ height:40px; width:auto; object-fit:contain; }
-  #marquee-track .item span{ font-size:8px; font-weight:900; letter-spacing:.3em; text-transform:uppercase; }
+  /* ================= CORE — Seção 4 ================= */
+  #core{ background:#020202; padding:160px 0; }
+  #core .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; }
+  #core .chips{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  #core .chip{ padding:28px; border-radius:20px; }
+  #core .chip svg{ width:30px; height:30px; margin-bottom:16px; }
+  #core .chip .label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; line-height:1.3; }
+  #core h2{ font-size:clamp(34px,5vw,64px); }
+  @media (max-width:860px){ #core .grid2{ grid-template-columns:1fr; } }
 
-  /* ================= CLIP-PATH ROW ================= */
-  .clip-row{ padding:140px 24px; text-align:center; background:#020202; }
-  .clip-row .inner{ clip-path:inset(0 0 100% 0); max-width:820px; margin:0 auto; }
-  .clip-row h2{ font-size:clamp(28px,4.5vw,52px); }
-
-  /* ================= FOOTER / RESOLVE ================= */
+  /* ================= FOOTER — Seção 5 ================= */
   footer{ background:#000; border-top:1px solid rgba(255,255,255,0.05); padding-top:120px; padding-bottom:64px; }
   footer .grid4{ display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:80px; margin-bottom:90px; }
   footer h4{ font-size:11px; font-weight:900; letter-spacing:.4em; color:var(--neon-orange); font-style:italic; text-transform:uppercase; }
   footer ul{ list-style:none; padding:0; margin:24px 0 0; display:flex; flex-direction:column; gap:18px; }
   footer li a{ font-size:10px; font-weight:700; letter-spacing:.15em; text-transform:uppercase; color:#888; }
+  footer .tagline{ margin-top:20px; max-width:280px; font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:#777; line-height:1.7; }
   footer .socials{ display:flex; gap:16px; margin-top:36px; }
   footer .socials a{ width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#888; }
   footer .socials svg{ width:16px; height:16px; }
@@ -128,14 +119,22 @@
   footer .copyright div{ font-size:10px; font-weight:900; letter-spacing:.7em; color:#333; font-style:italic; text-transform:uppercase; }
   @media (max-width:860px){ footer .grid4{ grid-template-columns:1fr 1fr; row-gap:56px; } }
 
+  /* ================= TUNNEL WARP TRANSITION (between every section) ================= */
+  .tunnel-canvas{ position:fixed; inset:0; z-index:85; pointer-events:none; mix-blend-mode:screen; }
+  .tunnel-flash{ position:fixed; inset:0; z-index:84; pointer-events:none; opacity:0;
+    background:radial-gradient(circle at 50% 50%, rgba(255,170,70,0.55) 0%, rgba(255,115,0,0.16) 35%, transparent 72%); }
+  .tunnel-target{ will-change:transform, filter, opacity; }
+
   @media (prefers-reduced-motion: reduce){
-    .hero-aurora,.hero-orb,#particles,.circuit-trace,.circuit-node{ animation:none !important; }
+    .hero-aurora,.hero-orb,#particles{ animation:none !important; }
   }
 </style>
 </head>
 <body>
 
 <div class="fixed-grid grid-engine"></div>
+<canvas id="tunnel-canvas" class="tunnel-canvas" aria-hidden="true"></canvas>
+<div class="tunnel-flash" aria-hidden="true"></div>
 
 <!-- NAV -->
 <nav style="position:fixed;top:0;left:0;right:0;z-index:100;border-bottom:1px solid rgba(255,255,255,0.05);backdrop-filter:blur(20px);background:rgba(0,0,0,0.4);">
@@ -145,7 +144,7 @@
   </div>
 </nav>
 
-<!-- ============ HERO ============ -->
+<!-- ============ SEÇÃO 1 — HERO ============ -->
 <header id="hero">
   <div class="bg">
     <div class="hero-bg-image"></div>
@@ -165,16 +164,6 @@
       <span class="word" style="color:var(--neon-orange);"><span class="neon-glow">Escala.</span></span>
     </h1>
 
-    <p class="prose sub" style="font-size:15px;">
-      Solução unificada de alta performance: integrando automações de escala industrial e
-      inteligência neural ao dia a dia do seu negócio
-    </p>
-
-    <div class="ctas">
-      <a href="https://wayia.com.br" class="btn btn-neon">Acesse Gratuitamente</a>
-      <a href="#network-driver" class="btn btn-glass">Explorar Ecossistema</a>
-    </div>
-
     <div class="ar-block">
       <img class="avatar" src="/images/hero-ar-avatar.png" alt="Aponte a câmera do seu celular para ver a Realidade Aumentada" decoding="async" width="192" height="192">
       <span class="badge" style="flex-direction:column;padding:14px 32px;">
@@ -186,75 +175,39 @@
   </div>
 </header>
 
-<!-- ============ CH.1 — RUÍDO (CHAOS) ============ -->
-<section id="chaos" class="stage">
-  <div class="wrap caption">
-    <span class="eyebrow">Antes</span>
-    <h2 style="font-size:clamp(26px,4.5vw,48px);margin-top:16px;">Cada sistema falando <br>uma língua diferente.</h2>
-    <p class="prose" style="margin-top:20px;font-size:12px;">
-      WhatsApp manual, agenda solta, planilha de estoque, CRM que ninguém atualiza —
-      cada ferramenta isolada, nenhuma conversando com a outra.
-    </p>
-  </div>
-</section>
-
-<!-- ============ CH.2 — CONVERGÊNCIA ============ -->
-<section id="converge" class="stage">
-  <svg class="circuit-svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
-    <g id="circuit-group">
-      <polyline class="circuit-trace" points="0,180 220,180 260,140 460,140 500,180 800,180"></polyline>
-      <polyline class="circuit-trace" points="1600,120 1360,120 1320,160 1080,160 1040,120 760,120"></polyline>
-      <polyline class="circuit-trace" points="0,760 200,760 240,800 520,800"></polyline>
-      <polyline class="circuit-trace" points="1600,820 1420,820 1380,780 1120,780"></polyline>
-      <polyline class="circuit-trace" points="0,420 140,420 170,460 340,460"></polyline>
-      <polyline class="circuit-trace" points="1600,480 1480,480 1450,440 1260,440"></polyline>
-      <circle class="circuit-node" cx="260" cy="140" r="5"></circle>
-      <circle class="circuit-node" cx="500" cy="180" r="5"></circle>
-      <circle class="circuit-node" cx="1320" cy="160" r="5"></circle>
-      <circle class="circuit-node" cx="1040" cy="120" r="5"></circle>
-      <circle class="circuit-node" cx="240" cy="800" r="5"></circle>
-      <circle class="circuit-node" cx="1380" cy="780" r="5"></circle>
-      <circle class="circuit-node" cx="170" cy="460" r="5"></circle>
-      <circle class="circuit-node" cx="1450" cy="440" r="5"></circle>
-    </g>
-  </svg>
-  <div id="converge-core">
-    <img src="/images/wayia-logo.png" alt="WayFlow Neural">
-    <span class="eyebrow">Convergência</span>
-    <h2 style="font-size:clamp(26px,4.5vw,46px);margin-top:12px;">Um núcleo. <br>Um único cérebro digital.</h2>
-  </div>
-</section>
-
-<!-- ============ CH.3 — NÚCLEO / INTELIGÊNCIA CENTRALIZADA ============ -->
-<section id="core" style="padding:140px 0;">
-  <div class="wrap grid2">
-    <div class="chips">
-      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#ff7300" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M9 9h6v6H9z"></path><path d="M4 9h2M4 15h2M18 9h2M18 15h2M9 4v2M15 4v2M9 18v2M15 18v2"></path></svg>
-        <div class="label">Handshake Instantâneo</div></div>
-      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"></path></svg>
-        <div class="label">Cérebro Digital</div></div>
-      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="12" cy="18" r="2"></circle><path d="M6 8v3a2 2 0 002 2h2M18 8v3a2 2 0 01-2 2h-2M12 13v3"></path></svg>
-        <div class="label">Integração Total</div></div>
-      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="#facc15" stroke="none"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"></path></svg>
-        <div class="label">Escala Humana</div></div>
+<!-- ============ SEÇÃO 2 — SOLUÇÃO UNIFICADA ============ -->
+<section id="unified">
+  <div class="wrap tunnel-target" style="max-width:980px;">
+    <h2 class="headline">
+      Solução unificada de alta performance: integrando automações de escala industrial e
+      inteligência neural ao dia a dia do seu negócio
+    </h2>
+    <div class="ctas">
+      <a href="https://wayia.com.br" class="btn btn-neon">Acesse Gratuitamente</a>
+      <a href="#network-driver" class="btn btn-glass">Explorar Ecossistema</a>
     </div>
-    <div>
-      <h2>Inteligência <br><span style="color:var(--neon-orange);">Centralizada.</span></h2>
-      <p class="prose" style="margin-top:28px;font-size:16px;">
-        Esqueça os bots tradicionais. Entregamos um sistema nervoso digital orquestrado
-        para escala industrial.
-      </p>
-      <a href="https://wayia.com.br" class="btn btn-neon" style="margin-top:36px;">Teste Grátis</a>
+  </div>
+
+  <div class="sync-label">
+    <span class="eyebrow" style="font-size:10px;letter-spacing:.6em;opacity:.6;">Sincronização Neural Ativa</span>
+  </div>
+  <div class="wrap" id="marquee-wrap">
+    <div class="glass" style="border-radius:24px;padding:12px 0;overflow:hidden;">
+      <div id="marquee-track"><!-- built by JS --></div>
     </div>
   </div>
 </section>
 
-<!-- ============ CH.4 — REDE (horizontal pinned run) ============ -->
+<!-- ============ SEÇÃO 3 — CARROSSEL DE VERTICAIS ============ -->
 <div id="network-driver">
   <div id="network-stage">
-    <div id="network-head">
+    <div id="network-head" class="tunnel-target">
       <span class="eyebrow">Soluções Verticais</span>
       <h2 style="font-size:clamp(28px,5vw,56px);margin-top:16px;">Modelos de <span style="color:var(--neon-orange);">Alta Conversão.</span></h2>
+      <div class="carousel-hint">
+        <span>Arraste ou role para navegar</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff7300" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+      </div>
     </div>
     <div id="network-track">
       <!-- Pet360 -->
@@ -318,32 +271,36 @@
   </div>
 </div>
 
-<!-- ============ CLIP-PATH EDITORIAL ROW ============ -->
-<div class="clip-row">
-  <div class="inner" id="clip-inner">
-    <h2>Infraestrutura tecnológica para <span style="color:var(--neon-orange);">empresas que não aceitam limites de escala.</span></h2>
-  </div>
-</div>
-
-<!-- ============ MARQUEE — Sincronização neural ativa ============ -->
-<section id="marquee-section">
-  <div style="text-align:center;margin-bottom:36px;">
-    <span class="eyebrow" style="font-size:10px;letter-spacing:.6em;opacity:.6;">Sincronização neural ativa</span>
-  </div>
-  <div class="wrap" style="overflow:hidden;">
-    <div class="glass" style="border-radius:24px;padding:12px 0;overflow:hidden;">
-      <div id="marquee-track">
-        <!-- duplicated 3x for seamless loop, built by JS -->
-      </div>
+<!-- ============ SEÇÃO 4 — INTELIGÊNCIA CENTRALIZADA ============ -->
+<section id="core">
+  <div class="wrap grid2">
+    <div class="chips">
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#ff7300" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M9 9h6v6H9z"></path><path d="M4 9h2M4 15h2M18 9h2M18 15h2M9 4v2M15 4v2M9 18v2M15 18v2"></path></svg>
+        <div class="label">Handshake Instantâneo</div></div>
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"></path></svg>
+        <div class="label">Cérebro Digital</div></div>
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="12" cy="18" r="2"></circle><path d="M6 8v3a2 2 0 002 2h2M18 8v3a2 2 0 01-2 2h-2M12 13v3"></path></svg>
+        <div class="label">Integração Total</div></div>
+      <div class="chip glass glass-blur"><svg viewBox="0 0 24 24" fill="#facc15" stroke="none"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"></path></svg>
+        <div class="label">Escala Humana</div></div>
+    </div>
+    <div class="tunnel-target">
+      <h2>Inteligência <br><span style="color:var(--neon-orange);">Centralizada.</span></h2>
+      <p class="prose" style="margin-top:28px;font-size:16px;">
+        Esqueça os bots tradicionais. Entregamos um sistema nervoso digital orquestrado
+        para escala industrial.
+      </p>
+      <a href="https://wayia.com.br" class="btn btn-neon" style="margin-top:36px;">Teste Grátis</a>
     </div>
   </div>
 </section>
 
-<!-- ============ FOOTER (resolve) ============ -->
+<!-- ============ SEÇÃO 5 — FOOTER ============ -->
 <footer>
   <div class="wrap grid4">
-    <div>
+    <div class="tunnel-target">
       <img src="/images/wayia-logo.png" alt="WayFlow Neural" style="height:40px;object-fit:contain;filter:brightness(1.1) contrast(1.25);">
+      <p class="tagline">Infraestrutura tecnológica para empresas que não aceitam limites de escala.</p>
       <div class="socials">
         <a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17.5" cy="6.5" r="1"></circle></svg></a>
         <a href="#" aria-label="Twitter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z"></path></svg></a>
@@ -403,7 +360,7 @@
     gsap.ticker.lagSmoothing(0);
   }
 
-  // ================= build marquee (real integration logos) =================
+  // ---- build marquee (real integration logos) ----
   var integrations = [
     { name:'Anthropic', url:'/images/integrations/anthropic.png' },
     { name:'Meta', url:'/images/integrations/meta.png' },
@@ -422,66 +379,10 @@
   // CREATE ALL PINNED SCROLLTRIGGERS FIRST (ordering law)
   // ============================================================
 
-  // ---- Ch.1 CHAOS: scattered node icons drift + fade ----
-  var chaosLabels = ['WhatsApp\nManual','Agenda\nde Papel','Planilha\nSolta','CRM\nParado','Estoque\nno Olho','Post-it'];
-  var chaosPositions = [
-    {top:'14%',left:'8%'},{top:'62%',left:'14%'},{top:'20%',left:'78%'},
-    {top:'68%',left:'74%'},{top:'42%',left:'46%'},{top:'10%',left:'50%'}
-  ];
-  var chaosWrap = document.querySelector('#chaos');
-  chaosLabels.forEach(function(label, i){
-    var el = document.createElement('div');
-    el.className = 'node glass';
-    el.style.top = chaosPositions[i].top;
-    el.style.left = chaosPositions[i].left;
-    el.style.whiteSpace = 'pre-line';
-    el.textContent = label;
-    chaosWrap.appendChild(el);
-  });
-  var chaosNodes = chaosWrap.querySelectorAll('.node');
-
-  if (!reduced) {
-    gsap.set(chaosNodes, { opacity: 0, scale: 0.6 });
-    gsap.timeline({
-      scrollTrigger: { trigger: '#chaos', start: 'top top', end: '+=140%', scrub: true, pin: true }
-    })
-    .to(chaosNodes, { opacity: 0.85, scale: 1, y: (i) => (i % 2 === 0 ? -30 : 30), stagger: 0.08, ease: 'power2.out' })
-    .to('#chaos .caption', { opacity: 0, y: -20 }, '<0.3')
-    .to(chaosNodes, { opacity: 0.15, filter: 'blur(2px)' }, '<');
-  } else {
-    gsap.set(chaosNodes, { opacity: 0.85 });
-  }
-
-  // ---- Ch.2 CONVERGE: circuit traces snap in, nodes spark, logo assembles ----
-  var traces = document.querySelectorAll('#converge .circuit-trace');
-  var nodes = document.querySelectorAll('#converge .circuit-node');
-  if (!reduced) {
-    gsap.set('#converge-core', { opacity: 0, scale: 0.8, y: 20 });
-    var tlConverge = gsap.timeline({
-      scrollTrigger: { trigger: '#converge', start: 'top top', end: '+=160%', scrub: true, pin: true }
-    });
-    tlConverge
-      .to(traces, { strokeOpacity: 0.95, stagger: 0.05, ease: 'power1.out' })
-      .to(nodes, { opacity: 1, stagger: 0.05 }, '<0.1')
-      .to('#converge-core', { opacity: 1, scale: 1, y: 0, ease: 'power3.out' }, '<0.2')
-      .to('#circuit-group', { opacity: 0.25 }, '>0.1');
-  } else {
-    gsap.set([traces, nodes, '#converge-core'], { opacity: 1, strokeOpacity: 1, scale: 1 });
-  }
-
-  // ---- Ch.3 CORE: chips + heading reveal ----
-  if (!reduced) {
-    gsap.set('#core .chip', { opacity: 0, y: 40 });
-    gsap.set('#core .grid2 > div:last-child > *', { opacity: 0, y: 30 });
-    gsap.timeline({ scrollTrigger: { trigger: '#core', start: 'top 70%', end: 'top 20%', scrub: true } })
-      .to('#core .chip', { opacity: 1, y: 0, stagger: 0.08 })
-      .to('#core .grid2 > div:last-child > *', { opacity: 1, y: 0, stagger: 0.08 }, '<0.1');
-  }
-
-  // ---- Ch.4 NETWORK: horizontal pinned run ----
+  // ---- Seção 3 NETWORK: horizontal pinned carrossel ----
   var networkTrack = document.getElementById('network-track');
   function networkDistance(){ return networkTrack.scrollWidth - window.innerWidth; }
-  gsap.to(networkTrack, {
+  var networkTween = gsap.to(networkTrack, {
     x: () => -networkDistance(),
     ease: 'none',
     scrollTrigger: {
@@ -494,16 +395,19 @@
     document.querySelectorAll('.prod-card .img-wrap img').forEach(function(img){
       gsap.fromTo(img, { xPercent: -6 }, {
         xPercent: 6, ease: 'none',
-        scrollTrigger: { trigger: '#network-driver', containerAnimation: gsap.getTweensOf(networkTrack)[0].scrollTrigger.animation, start: 'left center', end: 'right center', scrub: true }
+        scrollTrigger: { trigger: '#network-driver', containerAnimation: networkTween.scrollTrigger.animation, start: 'left center', end: 'right center', scrub: true }
       });
     });
   }
 
-  // ---- Clip-path editorial reveal ----
-  gsap.to('#clip-inner', {
-    clipPath: 'inset(0 0 0% 0)', ease: 'power2.out',
-    scrollTrigger: { trigger: '.clip-row', start: 'top 75%', end: 'top 35%', scrub: true }
-  });
+  // ---- Seção 4 CORE: chips + heading reveal ----
+  if (!reduced) {
+    gsap.set('#core .chip', { opacity: 0, y: 40 });
+    gsap.set('#core .grid2 > div:last-child > *', { opacity: 0, y: 30 });
+    gsap.timeline({ scrollTrigger: { trigger: '#core', start: 'top 70%', end: 'top 20%', scrub: true } })
+      .to('#core .chip', { opacity: 1, y: 0, stagger: 0.08 })
+      .to('#core .grid2 > div:last-child > *', { opacity: 1, y: 0, stagger: 0.08 }, '<0.1');
+  }
 
   // ============================================================
   // AMBIENT / NON-PINNED TRIGGERS — created AFTER the pinned ones
@@ -511,11 +415,11 @@
 
   // ---- hero char-split reveal (once, on load) ----
   gsap.from('.word span', { yPercent: 120, stagger: 0.05, duration: 1, ease: 'power4.out', delay: 0.1 });
-  gsap.from('.badge, .sub, .ctas, .ar-block', { opacity: 0, y: 20, stagger: 0.12, duration: 0.8, delay: 0.5 });
+  gsap.from('.badge, .ar-block', { opacity: 0, y: 20, stagger: 0.12, duration: 0.8, delay: 0.5 });
 
   // ---- marquee velocity-skew drift ----
   if (!reduced) {
-    var mq = gsap.to('#marquee-track', { xPercent: -50, ease: 'none', duration: 30, repeat: -1 });
+    gsap.to('#marquee-track', { xPercent: -50, ease: 'none', duration: 30, repeat: -1 });
     ScrollTrigger.create({
       onUpdate: function(self){
         var v = gsap.utils.clamp(-20, 20, self.getVelocity() / 300);
@@ -564,6 +468,76 @@
       trigger: '#hero', start: 'top top', end: '+=7%', scrub: true,
       onUpdate: function(self){ alpha = 1 - self.progress; if (alpha > 0.01 && !raf) raf = requestAnimationFrame(loop); }
     });
+  }
+
+  // ---- TUNNEL WARP TRANSITION — fires at every section boundary ----
+  // The visitor is scrolled "through a fast tunnel" between each of the 5 sections:
+  // hero -> unified -> carrossel -> core -> footer.
+  if (!reduced) {
+    var tCanvas = document.getElementById('tunnel-canvas');
+    var tCtx = tCanvas.getContext('2d');
+    var tDPR = Math.min(window.devicePixelRatio || 1, 1.5);
+    function tResize(){ tCanvas.width = innerWidth*tDPR; tCanvas.height = innerHeight*tDPR; tCanvas.style.width = innerWidth+'px'; tCanvas.style.height = innerHeight+'px'; }
+    tResize(); window.addEventListener('resize', tResize);
+
+    var STREAK_N = 90;
+    var streaks = [];
+    for (var s=0; s<STREAK_N; s++) streaks.push({ a: Math.random()*Math.PI*2, r: Math.random(), sp: 0.6+Math.random()*1.2 });
+
+    var tunnelIntensity = 0, tunnelRAF = null;
+    function tunnelLoop(){
+      var cx = innerWidth/2, cy = innerHeight/2;
+      tCtx.setTransform(tDPR,0,0,tDPR,0,0);
+      if (tunnelIntensity > 0.01) {
+        tCtx.fillStyle = 'rgba(2,2,2,0.35)';
+        tCtx.fillRect(0,0,innerWidth,innerHeight);
+        var maxR = Math.hypot(innerWidth,innerHeight)/2 * 1.05;
+        streaks.forEach(function(p){
+          var r0 = p.r * maxR;
+          p.r += p.sp * (0.02 + tunnelIntensity*0.05);
+          if (p.r > 1) p.r = 0;
+          var r1 = p.r * maxR;
+          var x0 = cx + Math.cos(p.a)*r0, y0 = cy + Math.sin(p.a)*r0;
+          var x1 = cx + Math.cos(p.a)*r1, y1 = cy + Math.sin(p.a)*r1;
+          tCtx.strokeStyle = 'rgba(255,140,50,' + (tunnelIntensity*0.9) + ')';
+          tCtx.lineWidth = 1.5 + tunnelIntensity*2;
+          tCtx.beginPath(); tCtx.moveTo(x0,y0); tCtx.lineTo(x1,y1); tCtx.stroke();
+        });
+        tunnelRAF = requestAnimationFrame(tunnelLoop);
+      } else {
+        tCtx.clearRect(0,0,innerWidth,innerHeight);
+        tunnelRAF = null;
+      }
+    }
+    function tunnelKick(){ if (!tunnelRAF) tunnelRAF = requestAnimationFrame(tunnelLoop); }
+
+    var tunnelFlash = document.querySelector('.tunnel-flash');
+    function bindTunnel(sectionSel, targetSel){
+      var trg = document.querySelector(sectionSel);
+      if (!trg) return;
+      var target = targetSel ? document.querySelector(targetSel) : null;
+      if (target) gsap.set(target, { transformOrigin: '50% 40%' });
+      ScrollTrigger.create({
+        trigger: trg, start: 'top bottom', end: 'top top', scrub: true,
+        onUpdate: function(self){
+          var p = self.progress;
+          var intensity = p < 0.5 ? p*2 : (1-p)*2;
+          intensity = Math.max(0, Math.min(1, intensity));
+          tunnelIntensity = intensity;
+          gsap.set(tunnelFlash, { opacity: intensity*0.7 });
+          if (intensity > 0.01) tunnelKick();
+          if (target) gsap.set(target, {
+            scale: 1.14 - (intensity*0.14),
+            filter: 'blur(' + (intensity*10) + 'px)',
+            opacity: 1 - intensity*0.7
+          });
+        }
+      });
+    }
+    bindTunnel('#unified', '#unified .tunnel-target');
+    bindTunnel('#network-driver', '#network-head');
+    bindTunnel('#core', '#core .grid2 > div.tunnel-target');
+    bindTunnel('footer', 'footer .grid4 > div.tunnel-target');
   }
 
   // ============================================================
