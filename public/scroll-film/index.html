@@ -61,7 +61,7 @@
   #particles{ position:absolute; inset:0; z-index:1; }
 
   /* ================= UNIFIED — Seção 2 ================= */
-  #unified{ padding:180px 0 120px; text-align:center; background:var(--bg-deeper); overflow:hidden; }
+  #unified{ padding:180px 0 120px; text-align:center; background:var(--bg-deeper); overflow:hidden; perspective:1400px; }
   #unified .headline{ font-style:normal; font-weight:800; text-transform:uppercase; letter-spacing:.01em;
     color:#d6d6d6; line-height:1.5; font-size:clamp(20px,3.2vw,32px); }
   #unified .ctas{ margin-top:48px; display:flex; gap:20px; justify-content:center; flex-wrap:wrap; }
@@ -76,10 +76,10 @@
 
   /* ================= NETWORK — Seção 3, carrossel (horizontal pinned run) ================= */
   #network-driver{ height:400vh; position:relative; background:#020202; }
-  #network-stage{ position:sticky; top:0; height:100vh; overflow:hidden; }
+  #network-stage{ position:sticky; top:0; height:100vh; overflow:hidden; perspective:1200px; }
   #network-head{ text-align:center; padding:64px 24px 0; }
   #network-track{ display:flex; gap:40px; padding:64px 12vw 0; width:max-content; will-change:transform; }
-  .prod-card{ width:min(78vw,460px); border-radius:28px; overflow:hidden; flex-shrink:0; }
+  .prod-card{ width:min(78vw,460px); border-radius:28px; overflow:hidden; flex-shrink:0; will-change:transform; }
   .prod-card .img-wrap{ height:260px; overflow:hidden; }
   .prod-card .img-wrap img{ width:100%; height:100%; object-fit:cover; }
   .prod-card .body{ padding:28px; }
@@ -93,7 +93,7 @@
   @keyframes hint-slide{ 0%,100%{transform:translateX(0);opacity:.5} 50%{transform:translateX(6px);opacity:1} }
 
   /* ================= CORE — Seção 4 ================= */
-  #core{ background:#020202; padding:160px 0; }
+  #core{ background:#020202; padding:160px 0; perspective:1400px; }
   #core .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; }
   #core .chips{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
   #core .chip{ padding:28px; border-radius:20px; }
@@ -103,7 +103,7 @@
   @media (max-width:860px){ #core .grid2{ grid-template-columns:1fr; } }
 
   /* ================= FOOTER — Seção 5 ================= */
-  footer{ background:#000; border-top:1px solid rgba(255,255,255,0.05); padding-top:120px; padding-bottom:64px; }
+  footer{ background:#000; border-top:1px solid rgba(255,255,255,0.05); padding-top:120px; padding-bottom:64px; perspective:1400px; }
   footer .grid4{ display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:80px; margin-bottom:90px; }
   footer h4{ font-size:11px; font-weight:900; letter-spacing:.4em; color:var(--neon-orange); font-style:italic; text-transform:uppercase; }
   footer ul{ list-style:none; padding:0; margin:24px 0 0; display:flex; flex-direction:column; gap:18px; }
@@ -382,12 +382,24 @@
   // ---- Seção 3 NETWORK: horizontal pinned carrossel ----
   var networkTrack = document.getElementById('network-track');
   function networkDistance(){ return networkTrack.scrollWidth - window.innerWidth; }
+  if (!reduced) gsap.set('.prod-card', { transformPerspective: 1000, transformOrigin: '50% 50%' });
   var networkTween = gsap.to(networkTrack, {
     x: () => -networkDistance(),
     ease: 'none',
     scrollTrigger: {
       trigger: '#network-driver', start: 'top top', end: () => '+=' + (networkDistance() + window.innerHeight),
-      scrub: true, pin: '#network-stage', invalidateOnRefresh: true, anticipatePin: 1
+      scrub: true, pin: '#network-stage', invalidateOnRefresh: true, anticipatePin: 1,
+      // poly.app-style coverflow: each card rotates in 3D (Y axis) as it crosses the
+      // viewport, flattening out only when centered — same cards/copy, new motion.
+      onUpdate: reduced ? undefined : function(){
+        var vw = window.innerWidth, vc = vw / 2;
+        document.querySelectorAll('.prod-card').forEach(function(card){
+          var rect = card.getBoundingClientRect();
+          var dist = (rect.left + rect.width / 2 - vc) / vw;
+          var rotY = gsap.utils.clamp(-32, 32, dist * 60);
+          gsap.set(card, { rotationY: rotY, scale: 1 - Math.min(0.14, Math.abs(dist) * 0.16) });
+        });
+      }
     }
   });
   // per-card parallax on the images inside the horizontal run
@@ -416,6 +428,15 @@
   // ---- hero char-split reveal (once, on load) ----
   gsap.from('.word span', { yPercent: 120, stagger: 0.05, duration: 1, ease: 'power4.out', delay: 0.1 });
   gsap.from('.badge, .ar-block', { opacity: 0, y: 20, stagger: 0.12, duration: 0.8, delay: 0.5 });
+
+  // ---- hero avatar: poly.app-style continuous 3D rotation tied to scroll ----
+  if (!reduced) {
+    gsap.set('.ar-block img.avatar', { transformPerspective: 900, transformStyle: 'preserve-3d' });
+    gsap.to('.ar-block img.avatar', {
+      rotationY: 360, ease: 'none',
+      scrollTrigger: { trigger: '#hero', start: 'top top', end: 'bottom top', scrub: 0.6 }
+    });
+  }
 
   // ---- marquee velocity-skew drift ----
   if (!reduced) {
@@ -528,6 +549,7 @@
           if (intensity > 0.01) tunnelKick();
           if (target) gsap.set(target, {
             scale: 1.14 - (intensity*0.14),
+            rotationX: -intensity*22,
             filter: 'blur(' + (intensity*10) + 'px)',
             opacity: 1 - intensity*0.7
           });
