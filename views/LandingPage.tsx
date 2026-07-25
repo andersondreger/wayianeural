@@ -59,7 +59,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       </nav>
 
       {/* Hero Section */}
-      <header className="relative z-10 pt-44 pb-20 px-6 text-center overflow-hidden">
+      <header className="relative z-10 pt-36 pb-20 px-6 text-center overflow-hidden">
         {/* Fundo futurista do Hero */}
         <div className="absolute inset-0 -z-10 pointer-events-none">
           <div className="absolute inset-0 hero-bg-image"></div>
@@ -106,7 +106,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="mt-16 text-4xl md:text-6xl font-black uppercase leading-[1.0] tracking-tighter"
+                className="mt-16 text-5xl md:text-7xl font-black uppercase leading-[1.0] tracking-tighter"
               >
                 Potencialize sua <br />
                 <span className="text-orange-500 neon-glow italic">Operação de Escala.</span>
