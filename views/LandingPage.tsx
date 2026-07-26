@@ -137,6 +137,14 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
                 alt="QR code para abrir a experiência de Realidade Aumentada da WayAR"
                 className="w-64 h-64 md:w-80 md:h-80 object-contain rounded-3xl drop-shadow-[0_0_30px_rgba(255,115,0,0.3)]"
               />
+              <a
+                href="https://wayar.wayia.com.br/ar/fef070a1-0f92-4d64-9ba6-8850d0a49c32"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-orange-500 text-xs font-bold uppercase tracking-[0.2em] hover:underline"
+              >
+                Clique Aqui
+              </a>
             </motion.div>
           </div>
 
