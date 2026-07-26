@@ -59,6 +59,13 @@ export default function App() {
     checkSession();
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('start') === 'onboarding') {
+      setView('ONBOARDING');
+    }
+  }, []);
+
   const handleLogin = (email: string) => {
     setUser({ ...masterUser, email, isAdmin: email === ADMIN_EMAIL });
     setView('DASHBOARD');
