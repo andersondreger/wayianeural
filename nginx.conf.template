@@ -1,0 +1,87 @@
+# Renderizado no start do container (envsubst so troca as variaveis do ambiente:
+# EVOLUTION_API_KEY e SUPABASE_PUBLISHABLE_KEY, que vem do .env do servidor).
+
+# cache curto da validacao de sessao (evita bater no Supabase a cada polling)
+proxy_cache_path /tmp/auth_cache levels=1:2 keys_zone=auth_cache:1m max_size=5m inactive=5m;
+limit_req_zone $binary_remote_addr zone=evo_limit:1m rate=20r/s;
+
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # IP real do cliente (vem do Traefik na rede docker) para o rate limit
+  set_real_ip_from 172.16.0.0/12;
+  set_real_ip_from 192.168.0.0/16;
+  set_real_ip_from 10.0.0.0/8;
+  real_ip_header X-Forwarded-For;
+  real_ip_recursive on;
+
+  gzip on;
+  gzip_types text/css application/javascript application/json image/svg+xml;
+
+  add_header X-Content-Type-Options nosniff always;
+
+  # export com trailingSlash: /app -> /app/ -> /app/index.html
+  location / {
+    try_files $uri $uri/ =404;
+  }
+
+  # assets com hash do Next: cache longo
+  location /_next/static/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+  }
+
+  # HTML sempre revalidado (mesmo comportamento do Pages: max-age=0, must-revalidate)
+  location ~* \.html$ {
+    add_header Cache-Control "public, max-age=0, must-revalidate";
+  }
+
+  # Proxy da Evolution API: a chave fica so aqui, nunca vai pro navegador.
+  # So atende quem tem sessao valida do Supabase e so nos endpoints que o
+  # dashboard usa.
+  location ~ ^/evo/(instance/(fetchInstances|create|(connectionState|connect|delete)/[^/]+)|contact/(fetchContacts|findMany)/[^/]+)$ {
+    limit_req zone=evo_limit burst=40 nodelay;
+    auth_request /_auth/session;
+
+    rewrite ^/evo/(.*)$ /$1 break;
+    proxy_pass https://evo2.wayiaflow.com.br;
+    proxy_ssl_server_name on;
+    proxy_set_header Host evo2.wayiaflow.com.br;
+    proxy_set_header apikey "${EVOLUTION_API_KEY}";
+    proxy_set_header Authorization "";
+    proxy_set_header Origin "https://wayia.com.br";
+    proxy_read_timeout 60s;
+
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options nosniff always;
+  }
+
+  # qualquer outro caminho em /evo/ e negado
+  location /evo/ {
+    return 403;
+  }
+
+  location = /_auth/session {
+    internal;
+    proxy_pass https://dteagxhnuhejefvguxfw.supabase.co/auth/v1/user;
+    proxy_ssl_server_name on;
+    proxy_set_header Host dteagxhnuhejefvguxfw.supabase.co;
+    proxy_set_header apikey "${SUPABASE_PUBLISHABLE_KEY}";
+    proxy_set_header Authorization $http_authorization;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_cache auth_cache;
+    proxy_cache_key $http_authorization;
+    proxy_cache_valid 200 60s;
+  }
+
+  error_page 401 = @unauth;
+  location @unauth {
+    default_type application/json;
+    return 401 '{"error":"unauthorized"}';
+  }
+
+  error_page 404 /404.html;
+}

@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: wayianeural-web
     restart: unless-stopped
+    environment:
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina no .env}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?defina no .env}
     networks:
       - wayia-net
     healthcheck:

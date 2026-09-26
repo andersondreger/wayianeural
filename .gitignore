@@ -32,3 +32,6 @@ image/
 *.njsproj
 *.sln
 *.sw?
+
+# Segredos do servidor (proxy da Evolution) - nunca commitar
+.env

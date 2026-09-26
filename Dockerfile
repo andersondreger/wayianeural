@@ -8,6 +8,7 @@ RUN npm run build
 
 # Stage 2: nginx servindo o export estatico
 FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# template renderizado no start (envsubst) com os segredos do .env do servidor
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/out /usr/share/nginx/html
 EXPOSE 80

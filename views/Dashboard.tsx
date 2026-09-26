@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MessageSquare, LogOut, RefreshCw, Layers, ChevronLeft, Zap,
@@ -32,8 +33,17 @@ const INTEGRATIONS = [
   { name: 'Make', url: '/images/integrations/make.png' },
 ];
 
-const EVOLUTION_URL = 'https://evo2.wayiaflow.com.br';
-const EVOLUTION_API_KEY = 'd86920ba398e31464c46401214779885';
+// A Evolution API e acessada pelo proxy do servidor (nginx /evo/), que guarda a
+// chave no .env da VPS e so atende sessoes validas do Supabase. Nunca colocar
+// a chave da Evolution neste arquivo: ele vai inteiro para o navegador.
+const EVOLUTION_URL = '/evo';
+
+const evoFetch = async (url: string, init: RequestInit = {}) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
+  if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  return fetch(url, { ...init, headers });
+};
 
 // Proxy dedicado (Cloudflare Worker) que guarda a chave do WayAR como secret
 // e repassa para a API publica do WayAR. Nunca chamar wayar.wayia.com.br
@@ -69,7 +79,6 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
   const getHeaders = (instanceName?: string) => {
     const headers: any = { 
-      'apikey': EVOLUTION_API_KEY, 
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Cache-Control': 'no-cache, no-store, must-revalidate'
@@ -82,7 +91,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
   const fetchInstances = async () => {
     try {
-      const res = await fetch(`${EVOLUTION_URL}/instance/fetchInstances?t=${Date.now()}`, { 
+      const res = await evoFetch(`${EVOLUTION_URL}/instance/fetchInstances?t=${Date.now()}`, { 
         headers: getHeaders(),
         mode: 'cors'
       });
@@ -121,10 +130,10 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     setLastRouteUsed(isAuto ? 'Auto-Repair: Recuperando Banco...' : 'Shock v7.5: Re-mapeando Cluster...');
     try {
       // 1. Despertar Instância (Heartbeat Force)
-      await fetch(`${EVOLUTION_URL}/instance/connectionState/${name}`, { headers: getHeaders(name) });
+      await evoFetch(`${EVOLUTION_URL}/instance/connectionState/${name}`, { headers: getHeaders(name) });
       
       // 2. Refresh de Sessão sem deslogar (Force Re-link)
-      await fetch(`${EVOLUTION_URL}/instance/connect/${name}`, { 
+      await evoFetch(`${EVOLUTION_URL}/instance/connect/${name}`, { 
         method: 'POST', 
         headers: getHeaders(name),
         body: JSON.stringify({ qrcode: false })
@@ -132,7 +141,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
       // 3. Forçar Sincronia de Contatos (Comando de API de Baixo Nível)
       setLastRouteUsed('Deep Sync: Solicitando Contatos ao Phone...');
-      await fetch(`${EVOLUTION_URL}/contact/fetchContacts/${name}`, { 
+      await evoFetch(`${EVOLUTION_URL}/contact/fetchContacts/${name}`, { 
         method: 'GET',
         headers: getHeaders(name) 
       }).catch(() => null);
@@ -163,7 +172,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
       setLastRouteUsed('Consultando Postgres...');
       
       // TENTATIVA A: findMany (Leitura direta do banco sincronizado)
-      const resDb = await fetch(`${EVOLUTION_URL}/contact/findMany/${name}`, { 
+      const resDb = await evoFetch(`${EVOLUTION_URL}/contact/findMany/${name}`, { 
         method: 'POST',
         headers: getHeaders(name),
         body: JSON.stringify({
@@ -187,7 +196,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
       // TENTATIVA B: fetchContacts (Força a API a puxar do WhatsApp e salvar no DB)
       setLastRouteUsed('Banco Vazio. Forçando Sync...');
-      const resFetch = await fetch(`${EVOLUTION_URL}/contact/fetchContacts/${name}`, { 
+      const resFetch = await evoFetch(`${EVOLUTION_URL}/contact/fetchContacts/${name}`, { 
         headers: getHeaders(name) 
       });
       
@@ -243,7 +252,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     const sanitizedName = newInstanceName.trim().replace(/[^a-zA-Z0-9_-]/g, '');
 
     try {
-      const res = await fetch(`${EVOLUTION_URL}/instance/create`, {
+      const res = await evoFetch(`${EVOLUTION_URL}/instance/create`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ 
@@ -273,7 +282,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
   const forceQRGeneration = async (instanceName: string) => {
     setIsLoadingQR(true);
     try {
-      const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { 
+      const res = await evoFetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { 
         headers: getHeaders(instanceName) 
       });
       const data = await res.json();
@@ -292,7 +301,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
 
   const deleteInstance = async (name: string) => {
     if (!confirm(`Remover terminal ${name}?`)) return;
-    await fetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: getHeaders() });
+    await evoFetch(`${EVOLUTION_URL}/instance/delete/${name}`, { method: 'DELETE', headers: getHeaders() });
     await fetchInstances();
   };
 

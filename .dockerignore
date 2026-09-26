@@ -6,3 +6,4 @@ image
 site*.png
 *.md
 .claude
+.env*
