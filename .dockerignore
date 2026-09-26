@@ -1,0 +1,8 @@
+.git
+node_modules
+.next
+out
+image
+site*.png
+*.md
+.claude

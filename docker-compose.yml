@@ -1,0 +1,26 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wayianeural-web
+    restart: unless-stopped
+    networks:
+      - wayia-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/app/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: wayia-net
+      traefik.http.routers.wayianeural.entrypoints: web,websecure
+      traefik.http.routers.wayianeural.rule: Host(`wayia.com.br`)
+      traefik.http.routers.wayianeural.tls: "true"
+      traefik.http.routers.wayianeural.tls.certresolver: leresolver
+      traefik.http.services.wayianeural.loadbalancer.server.port: "80"
+
+networks:
+  wayia-net:
+    external: true
