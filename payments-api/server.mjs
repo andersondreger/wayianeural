@@ -142,6 +142,9 @@ const readJson = async (req) => {
   try { return chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {}; } catch { throw new HttpError(400, 'json invalido'); }
 };
 
+// Vinculo assinatura -> negocio: o primeiro `ref` que usa uma assinatura ativa fica com ela.
+export const claimDecision = (sub, ref) => (!ref ? 'ok' : !sub?.claimed_ref ? 'claim' : sub.claimed_ref === ref ? 'ok' : 'conflict');
+
 const validCpfCnpj = (v) => /^\d{11}$|^\d{14}$/.test(v);
 
 // ---------- handlers ----------
@@ -224,8 +227,21 @@ const routes = {
     const email = (url.searchParams.get('email') ?? '').toLowerCase();
     const product = url.searchParams.get('product') ?? '';
     if (!email || !product) throw new HttpError(400, 'email e product obrigatorios');
-    const [sub] = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(email)}&product_slug=eq.${encodeURIComponent(product)}`);
-    return { active: isEntitled(sub), status: sub?.status ?? 'NONE', currentPeriodEnd: sub?.current_period_end ?? null };
+    const ref = (url.searchParams.get('ref') ?? '').slice(0, 120) || null;
+    const q = `pay_subscriptions?email=eq.${encodeURIComponent(email)}&product_slug=eq.${encodeURIComponent(product)}`;
+    let [sub] = await sb(q);
+    let active = isEntitled(sub), claimed = null;
+    if (active && ref) {
+      let d = claimDecision(sub, ref);
+      if (d === 'claim') {
+        // condicional (claimed_ref is null): se dois negocios chegam juntos, so um ganha
+        const won = await sb(`${q}&claimed_ref=is.null`, { method: 'PATCH', body: { claimed_ref: ref }, prefer: 'return=representation' });
+        if (!won?.length) { [sub] = await sb(q); d = claimDecision(sub, ref); } else d = 'ok';
+      }
+      if (d === 'conflict') active = false;
+      claimed = sub.claimed_ref ?? ref;
+    }
+    return { active, status: sub?.status ?? 'NONE', currentPeriodEnd: sub?.current_period_end ?? null, ...(claimed && !active ? { reason: 'claimed_by_other_business' } : {}) };
   },
 
   'GET /admin/summary': async (req) => {
@@ -262,6 +278,17 @@ const routes = {
       ...buildFinance(subs, events, new Date(), Object.fromEntries(prods.map((p) => [p.slug, p.name]))),
       gatewayMode: ASAAS_BASE.includes('sandbox') ? 'sandbox' : 'producao', generatedAt: new Date().toISOString(),
     };
+  },
+
+  // libera o vinculo (ex.: cliente trocou de negocio/cadastro). Body: {email, product}
+  'POST /admin/claims/release': async (req) => {
+    await adminFromJwt(req);
+    const { email, product } = await readJson(req);
+    if (!email || !product) throw new HttpError(400, 'email e product obrigatorios');
+    const rows = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(String(email).toLowerCase())}&product_slug=eq.${encodeURIComponent(String(product))}`,
+      { method: 'PATCH', body: { claimed_ref: null }, prefer: 'return=representation' });
+    if (!rows?.length) throw new HttpError(404, 'assinatura nao encontrada');
+    return { released: true };
   },
 
   'GET /admin/products': async (req) => { await adminFromJwt(req); return sb('pay_products?order=sort.asc'); },

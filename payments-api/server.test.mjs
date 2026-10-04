@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { eventToStatus, isEntitled, buildFinance } from './server.mjs';
+import { eventToStatus, isEntitled, buildFinance, claimDecision } from './server.mjs';
 
 test('eventos do Asaas mapeiam para o status certo', () => {
   assert.equal(eventToStatus('PAYMENT_RECEIVED'), 'ACTIVE');
@@ -46,4 +46,11 @@ test('financeiro: conta cada cobranca uma vez e separa estorno', () => {
   assert.equal(f.kpis.churnPct, 50);
   assert.equal(f.months.length, 12);
   assert.equal(f.byProduct.find((p) => p.slug === 'pet360').name, 'Pet360');
+});
+
+test('vinculo: primeiro negocio ganha, outro com o mesmo e-mail e recusado', () => {
+  assert.equal(claimDecision({ claimed_ref: null }, null), 'ok');
+  assert.equal(claimDecision({ claimed_ref: null }, 'pet360:a'), 'claim');
+  assert.equal(claimDecision({ claimed_ref: 'pet360:a' }, 'pet360:a'), 'ok');
+  assert.equal(claimDecision({ claimed_ref: 'pet360:a' }, 'pet360:b'), 'conflict');
 });

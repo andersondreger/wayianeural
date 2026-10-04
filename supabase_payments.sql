@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS public.pay_subscriptions (
     UNIQUE (email, product_slug)
 );
 
+-- Vinculo da assinatura a UM negocio do projeto (ex.: 'pet360:<businessId>'): impede que outro
+-- cadastro use o mesmo e-mail para ganhar acesso. Liberar so pelo admin.
+ALTER TABLE public.pay_subscriptions ADD COLUMN IF NOT EXISTS claimed_ref TEXT;
+
 -- 3. Log de eventos do gateway (auditoria + idempotencia do webhook)
 CREATE TABLE IF NOT EXISTS public.pay_events (
     id TEXT PRIMARY KEY,                         -- id do evento Asaas
