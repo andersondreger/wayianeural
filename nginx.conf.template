@@ -58,6 +58,20 @@ server {
     add_header X-Content-Type-Options nosniff always;
   }
 
+  # API de pagamentos (container payments-api). A autenticacao e feita la dentro
+  # (JWT do Supabase / token do webhook / token de servico), entao so repassa.
+  location /pay-api/ {
+    limit_req zone=evo_limit burst=20 nodelay;
+    resolver 127.0.0.11 valid=10s;
+    set $pay_upstream http://payments-api:3000;
+    rewrite ^/pay-api/(.*)$ /$1 break;
+    proxy_pass $pay_upstream;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    client_max_body_size 64k;
+    add_header Cache-Control "no-store" always;
+  }
+
   # qualquer outro caminho em /evo/ e negado
   location /evo/ {
     return 403;

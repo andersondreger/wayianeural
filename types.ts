@@ -1,7 +1,7 @@
 
 export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD' | 'THANK_YOU';
 
-export type DashboardTab = 'overview' | 'atendimento' | 'instancias' | 'ar' | 'agentes' | 'n8n' | 'settings';
+export type DashboardTab = 'overview' | 'atendimento' | 'instancias' | 'ar' | 'agentes' | 'n8n' | 'settings' | 'pagamentos' | 'admin_pay';
 
 export type SubscriptionStatus = 'ACTIVE' | 'TRIALING' | 'EXPIRED' | 'INACTIVE';
 

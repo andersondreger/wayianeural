@@ -24,6 +24,22 @@ services:
       traefik.http.routers.wayianeural.tls.certresolver: leresolver
       traefik.http.services.wayianeural.loadbalancer.server.port: "80"
 
+  payments-api:
+    build:
+      context: ./payments-api
+    container_name: wayianeural-payments
+    restart: unless-stopped
+    environment:
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?defina no .env}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?defina no .env}
+      ASAAS_API_KEY: ${ASAAS_API_KEY:?defina no .env}
+      ASAAS_API_BASE_URL: ${ASAAS_API_BASE_URL:-https://sandbox.asaas.com/api/v3}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina no .env}
+      PAY_SERVICE_TOKEN: ${PAY_SERVICE_TOKEN:?defina no .env}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?defina no .env}
+    networks:
+      - wayia-net
+
 networks:
   wayia-net:
     external: true

@@ -18,11 +18,15 @@ import {
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
 import { products } from '../data/products';
+import { PaymentsPanel, AdminPaymentsPanel } from '../components/PaymentsPanel';
+import { payApi } from '../lib/pay';
 
 interface DashboardProps {
   user: UserSession;
   onLogout: () => void;
   onCheckout?: () => void;
+  initialTab?: DashboardTab;
+  initialProduct?: string;
 }
 
 const INTEGRATIONS = [
@@ -50,8 +54,11 @@ const evoFetch = async (url: string, init: RequestInit = {}) => {
 // direto daqui, a chave nao pode ir pro navegador.
 const AR_PROXY_URL = 'https://wayianeural-ar-proxy.dreger-anderson.workers.dev';
 
-export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProduct }: DashboardProps) {
+  const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab ?? 'overview');
+  // quem e admin de pagamentos e decidido pelo servidor (ADMIN_EMAILS), nunca pelo front
+  const [isPayAdmin, setIsPayAdmin] = useState(false);
+  useEffect(() => { payApi.me().then(m => setIsPayAdmin(m.isAdmin)).catch(() => {}); }, []);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
   const [instances, setInstances] = useState<any[]>([]);
@@ -379,6 +386,8 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
     { id: 'instancias', label: 'Instâncias', icon: Server },
     { id: 'ar', label: 'RA / WayAR', icon: Scan },
     { id: 'agentes', label: 'Agentes IA', icon: Bot },
+    { id: 'pagamentos', label: 'Projetos & Planos', icon: Crown },
+    ...(isPayAdmin ? [{ id: 'admin_pay', label: 'Admin Pagamentos', icon: ShieldCheck }] : []),
     { id: 'settings', label: 'Ajustes', icon: Settings2 },
   ];
 
@@ -720,6 +729,14 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                      )}
                   </div>
                 </motion.div>
+             ) : activeTab === 'pagamentos' ? (
+                <motion.div key="pagamentos" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
+                  <PaymentsPanel initialProduct={initialProduct} />
+                </motion.div>
+             ) : activeTab === 'admin_pay' && isPayAdmin ? (
+                <motion.div key="admin_pay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
+                  <AdminPaymentsPanel />
+                </motion.div>
              ) : activeTab === 'settings' ? (
                 <motion.div key="settings" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 p-12 overflow-y-auto custom-scrollbar">
                   <div className="max-w-3xl mx-auto space-y-12">
@@ -745,7 +762,7 @@ export function Dashboard({ user, onLogout, onCheckout }: DashboardProps) {
                         </div>
                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest leading-relaxed">Libere WhatsApp ilimitado, IA de vendas e automação total de todo o ecossistema WayIA.</p>
                         <button
-                           onClick={onCheckout}
+                           onClick={() => setActiveTab('pagamentos')}
                            className="flex items-center gap-3 px-8 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/30"
                         >
                            <Crown size={16} /> Ativar via PIX ou Cartão

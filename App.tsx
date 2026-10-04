@@ -12,12 +12,13 @@ import { BusinessQuizData } from './components/BusinessQuiz';
 import { ViewState, UserSession } from './types';
 
 const ADMIN_EMAIL = 'dregerr.anderson@gmail.com';
-const CHECKOUT_LINK = "https://pay.kiwify.com.br/ufaPS6M"; 
 
 export default function App() {
   const [view, setView] = useState<ViewState>('LANDING');
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
+  // /app/?pay=<projeto>: link de intencao de compra vindo dos outros projetos
+  const [payProduct, setPayProduct] = useState<string | undefined>();
 
   const masterUser: UserSession = {
     email: ADMIN_EMAIL,
@@ -63,6 +64,11 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('start') === 'onboarding') {
       setView('ONBOARDING');
+    }
+    const pay = params.get('pay');
+    if (pay && /^[a-z0-9-]{1,32}$/.test(pay)) {
+      setPayProduct(pay);
+      setView('DASHBOARD');
     }
   }, []);
 
@@ -139,7 +145,8 @@ export default function App() {
           <Dashboard
             user={user}
             onLogout={handleLogout}
-            onCheckout={() => window.open(CHECKOUT_LINK, '_blank')}
+            initialTab={payProduct ? 'pagamentos' : undefined}
+            initialProduct={payProduct}
           />
         )}
       </AnimatePresence>
