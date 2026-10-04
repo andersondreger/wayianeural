@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { payApi, brl, Finance } from '../lib/pay';
+import { ECOSYSTEM, BILLING_LABEL, EcosystemProject } from '../lib/ecosystem';
 
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const monthLabel = (k: string) => `${MONTHS[Number(k.slice(5)) - 1]}/${k.slice(2, 4)}`;
@@ -66,6 +67,10 @@ export function FinanceDashboard() {
   const k = f.kpis;
   const delta = k.receivedPrevMonthCents ? Math.round(((k.receivedThisMonthCents - k.receivedPrevMonthCents) / k.receivedPrevMonthCents) * 100) : null;
   const net = k.receivedThisMonthCents - k.refundsThisMonthCents;
+  const stats = Object.fromEntries(f.byProduct.map(p => [p.slug, p]));
+  const known = new Set(ECOSYSTEM.map(e => e.slug));
+  const extra: EcosystemProject[] = f.byProduct.filter(p => !known.has(p.slug)).map(p => ({ slug: p.slug, name: p.name, billing: 'central' }));
+  const cards = [...ECOSYSTEM, ...extra].map(e => ({ ...e, active: stats[e.slug]?.active ?? 0, mrrCents: stats[e.slug]?.mrrCents ?? 0, received12mCents: stats[e.slug]?.received12mCents ?? 0 }));
   const empty = f.months.every(m => m.receivedCents === 0) && k.activeCount === 0;
 
   return (
@@ -108,16 +113,28 @@ export function FinanceDashboard() {
         ) : <RevenueBars months={f.months} />}
       </section>
 
-      <section className="glass p-8 rounded-[2.5rem] border-white/5 space-y-5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.3em]">Receita por projeto (12 meses)</h3>
-        {f.byProduct.length === 0 && <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Nenhuma assinatura ainda.</p>}
-        {f.byProduct.map(p => (
-          <div key={p.slug} className="grid grid-cols-[8rem_1fr_auto] items-center gap-4 text-[11px] font-bold">
-            <span className="uppercase italic truncate">{p.name}</span>
-            <div className="h-2 rounded-full bg-white/5"><div className="h-2 rounded-full bg-orange-500" style={{ width: `${Math.max(p.sharePct, p.received12mCents ? 2 : 0)}%` }} /></div>
-            <span className="text-right">{brl(p.received12mCents)} <span className="text-gray-500">· {p.sharePct}% · MRR {brl(p.mrrCents)} · {p.active} ativos</span></span>
-          </div>
-        ))}
+      <section className="space-y-5">
+        <h3 className="text-[11px] font-black uppercase tracking-[0.3em]">Projetos do ecossistema ({cards.length})</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {cards.map(c => (
+            <div key={c.slug} className={`glass p-6 rounded-3xl border-white/5 space-y-3 ${c.billing === 'none' ? 'opacity-70' : ''}`}>
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-lg font-black uppercase italic leading-tight">{c.name}</span>
+                <span className={`shrink-0 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${c.billing === 'central' ? 'text-orange-400 border-orange-500/30' : c.billing === 'own' ? 'text-sky-400 border-sky-500/30' : 'text-gray-500 border-white/10'}`}>{BILLING_LABEL[c.billing]}</span>
+              </div>
+              {c.billing === 'none' && <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Projeto em desenvolvimento. A cobrança entra quando for integrado.</p>}
+              {c.billing === 'own' && <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Cobra pelo Asaas do próprio projeto. A receita ainda não aparece aqui.</p>}
+              {c.billing === 'central' && (
+                <div className="grid grid-cols-3 gap-3 text-[10px] font-bold uppercase tracking-widest">
+                  <div><div className="text-gray-500 text-[8px]">MRR</div><div className="text-base font-black">{brl(c.mrrCents)}</div></div>
+                  <div><div className="text-gray-500 text-[8px]">12 meses</div><div className="text-base font-black">{brl(c.received12mCents)}</div></div>
+                  <div><div className="text-gray-500 text-[8px]">Ativos</div><div className="text-base font-black">{c.active}</div></div>
+                </div>
+              )}
+              {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="inline-block text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-orange-400">Abrir projeto</a>}
+            </div>
+          ))}
+        </div>
       </section>
 
       {f.overdue.length > 0 && (
