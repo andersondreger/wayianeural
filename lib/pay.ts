@@ -11,6 +11,7 @@ export interface PayProduct {
   cycle: 'MONTHLY' | 'YEARLY';
   app_url: string;
   active: boolean;
+  checkout_url?: string | null;
 }
 
 export interface PaySubscription {
@@ -44,7 +45,7 @@ export const payApi = {
   catalog: () => call<PayProduct[]>('/catalog', {}, false),
   me: () => call<{ email: string; isAdmin: boolean; subscriptions: PaySubscription[] }>('/me'),
   checkout: (product: string, cpfCnpj: string) =>
-    call<{ invoiceUrl?: string | null; alreadyActive?: boolean; redirect?: string }>('/checkout', {
+    call<{ invoiceUrl?: string | null; alreadyActive?: boolean; redirect?: string; externalUrl?: string }>('/checkout', {
       method: 'POST', body: JSON.stringify({ product, cpfCnpj }),
     }),
   adminSummary: () => call<any>('/admin/summary'),

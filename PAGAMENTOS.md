@@ -18,6 +18,12 @@ Header: x-service-token: <PAY_SERVICE_TOKEN>      (so no servidor do projeto!)
 ```
    Se `active=false`, o projeto redireciona para `https://wayia.com.br/app/?pay=<slug>`.
 
+## Quem cobra o que
+- **Cobranca central (payments-api, Asaas):** pet360, imob360, criar, neural. Cada projeto consulta `/entitlement` (paywall `PAYWALL_MODE=off|warn|enforce`).
+- **Cobranca propria (Asaas do projeto):** bela360 (R$97, `/assinatura`) e WayAR (97/297/897, `/dashboard/billing`) ja cobram sozinhos.
+  O portal so leva o cliente para a pagina deles (`pay_products.checkout_url`), para nao criar 2a assinatura e cobrar em dobro.
+  A receita deles ainda nao aparece no painel Financeiro (so a das assinaturas centrais).
+
 ## Subir na VPS
 1. Rodar `supabase_payments.sql` no Supabase.
 2. Preencher no `.env` da VPS: `SUPABASE_SERVICE_ROLE_KEY`, `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `PAY_SERVICE_TOKEN`, `ADMIN_EMAILS`.
@@ -28,4 +34,4 @@ Header: x-service-token: <PAY_SERVICE_TOKEN>      (so no servidor do projeto!)
 
 ## Precos propostos (editaveis no admin)
 Base: docs internos (imob360 R$149/349/749, pet360 Pro R$149) e mercado BR (Imobzi R$129, Trinks R$40-81, MyWebar ~US$25).
-Pet360 R$149 · ImobiVision R$249 · Bela360 R$99 · WayAR R$129 · WayIA Criar R$79 · WayFlow Neural R$197.
+Pet360 R$149 · ImobiVision R$249 · Bela360 R$97 (preco real) · WayAR a partir de R$97 (planos reais 97/297/897) · WayIA Criar R$79 · WayFlow Neural R$197.

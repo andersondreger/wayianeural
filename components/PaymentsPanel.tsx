@@ -111,6 +111,8 @@ export function PaymentsPanel({ initialProduct }: { initialProduct?: string }) {
 
               {active ? (
                 <a href={p.app_url} className={`${btnCls} inline-flex items-center gap-2`}><CheckCircle2 size={14} /> Abrir {p.name}</a>
+              ) : p.checkout_url ? (
+                <a href={p.checkout_url} className={`${btnCls} inline-flex items-center gap-2`}><Crown size={14} /> Assinar o {p.name}</a>
               ) : selected === p.slug ? (
                 <div className="space-y-3">
                   <input className={inputCls} inputMode="numeric" placeholder="CPF ou CNPJ (so numeros)" value={doc} onChange={e => setDoc(e.target.value)} />

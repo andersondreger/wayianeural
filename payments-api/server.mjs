@@ -161,11 +161,14 @@ const routes = {
     const u = await userFromJwt(req);
     const { product, cpfCnpj, billingType = 'UNDEFINED' } = await readJson(req);
     const doc = String(cpfCnpj ?? '').replace(/\D/g, '');
-    if (!validCpfCnpj(doc)) throw new HttpError(400, 'CPF/CNPJ invalido');
     if (!['UNDEFINED', 'PIX', 'CREDIT_CARD', 'BOLETO'].includes(billingType)) throw new HttpError(400, 'forma de pagamento invalida');
 
     const [prod] = await sb(`pay_products?slug=eq.${encodeURIComponent(String(product))}&active=eq.true`);
     if (!prod) throw new HttpError(404, 'produto nao encontrado');
+
+    // projeto com cobranca propria: nunca cria 2a assinatura aqui (cobraria o cliente em dobro)
+    if (prod.checkout_url) return { externalUrl: prod.checkout_url };
+    if (!validCpfCnpj(doc)) throw new HttpError(400, 'CPF/CNPJ invalido');
 
     const [existing] = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(u.email)}&product_slug=eq.${prod.slug}`);
     if (isEntitled(existing)) return { alreadyActive: true, redirect: prod.app_url };

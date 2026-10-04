@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.pay_products (
     price_cents INTEGER NOT NULL CHECK (price_cents > 0),
     cycle TEXT NOT NULL DEFAULT 'MONTHLY' CHECK (cycle IN ('MONTHLY', 'YEARLY')),
     app_url TEXT NOT NULL,                       -- para onde o cliente vai depois de pagar
+    checkout_url TEXT,                           -- se preenchido, o projeto cobra pela PROPRIA pagina (Asaas dele): o portal so leva o cliente la, sem criar 2a assinatura
     active BOOLEAN NOT NULL DEFAULT true,
     sort INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -59,8 +60,13 @@ CREATE POLICY "Users read own subscriptions" ON public.pay_subscriptions
 INSERT INTO public.pay_products (slug, name, description, price_cents, app_url, sort) VALUES
   ('pet360',  'Pet360',          'Gestao de pet shop: agenda preditiva, fidelizacao via WhatsApp e estoque.',      14900, 'https://pet360.wayia.com.br/',   1),
   ('imob360', 'ImobiVision 360', 'CRM imobiliario com atendimento e qualificacao de leads 24/7.',                    24900, 'https://imob360.wayia.com.br/',  2),
-  ('bela360', 'Bela360',         'WhatsApp do salao no automatico: confirma, lembra e reativa clientes.',            9900, 'https://bela360.wayia.com.br/',  3),
-  ('wayar',   'WayAR',           'Realidade Aumentada no navegador, por QR code, sem app.',                         12900, 'https://wayar.wayia.com.br/',    4),
+  ('bela360', 'Bela360',         'WhatsApp do salao no automatico: confirma, lembra e reativa clientes.',            9700, 'https://bela360.wayia.com.br/',  3),
+  ('wayar',   'WayAR',           'Realidade Aumentada no navegador, por QR code, sem app. Planos de R$97 a R$897.',   9700, 'https://wayar.wayia.com.br/',    4),
   ('criar',   'WayIA Criar',     'Identidade visual e sites por chat (com sua API Key OpenAI/Anthropic).',           7900, 'https://criar.wayia.com.br/',    5),
   ('neural',  'WayFlow Neural',  'Hub de marketing: WhatsApp, CRM, agentes de IA e automacoes.',                    19700, 'https://wayia.com.br/app/',      6)
 ON CONFLICT (slug) DO NOTHING;
+
+-- Bela360 e WayAR ja tem cobranca propria no Asaas (precos reais: Bela360 R$97; WayAR 97/297/897).
+-- O portal so redireciona para a pagina de assinatura deles.
+UPDATE public.pay_products SET checkout_url = 'https://bela360.wayia.com.br/assinatura' WHERE slug = 'bela360';
+UPDATE public.pay_products SET checkout_url = 'https://wayar.wayia.com.br/dashboard/billing' WHERE slug = 'wayar';
