@@ -48,6 +48,7 @@ export const payApi = {
       method: 'POST', body: JSON.stringify({ product, cpfCnpj }),
     }),
   adminSummary: () => call<any>('/admin/summary'),
+  adminFinance: () => call<Finance>('/admin/finance'),
   adminProducts: () => call<PayProduct[]>('/admin/products'),
   adminUpdateProduct: (slug: string, patch: { price_cents?: number; active?: boolean }) =>
     call<PayProduct>(`/admin/products/${slug}`, { method: 'PUT', body: JSON.stringify(patch) }),
@@ -59,3 +60,17 @@ export const sendEmailCode = (email: string) =>
   supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
 export const verifyEmailCode = (email: string, token: string) =>
   supabase.auth.verifyOtp({ email, token, type: 'email' });
+
+export interface Finance {
+  kpis: {
+    mrrCents: number; arrCents: number; activeCount: number; arpuCents: number;
+    receivedThisMonthCents: number; receivedPrevMonthCents: number; refundsThisMonthCents: number;
+    pendingCents: number; pendingCount: number; atRiskCents: number; pastDueCount: number;
+    newThisMonth: number; canceledThisMonth: number; churnPct: number;
+  };
+  months: { month: string; receivedCents: number; refundsCents: number; newSubs: number; canceled: number }[];
+  byProduct: { slug: string; name: string; active: number; mrrCents: number; received12mCents: number; sharePct: number }[];
+  overdue: { email: string; product: string; priceCents: number; since: string }[];
+  gatewayMode: string;
+  generatedAt: string;
+}

@@ -72,6 +72,70 @@ const adminFromJwt = async (req) => {
   return u;
 };
 
+
+// ---------- financeiro ----------
+// Asaas manda CONFIRMED e depois RECEIVED para a MESMA cobranca (cartao): conta-se uma vez por
+// cobranca (o primeiro evento). Estorno entra no mes em que ocorreu. Meses em horario de Brasilia.
+const PAID_EVENTS = new Set(['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED']);
+const REFUND_EVENTS = new Set(['PAYMENT_REFUNDED', 'PAYMENT_PARTIALLY_REFUNDED']);
+const monthKey = (d) => new Date(new Date(d).getTime() - 3 * 3600e3).toISOString().slice(0, 7);
+const shiftMonth = (key, n) => { const [y, m] = key.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+
+export function buildFinance(subs, events, now = new Date(), names = {}) {
+  const cur = monthKey(now), prev = shiftMonth(cur, -1);
+  const months = Array.from({ length: 12 }, (_, i) => shiftMonth(cur, i - 11)).map((month) => ({ month, receivedCents: 0, refundsCents: 0, newSubs: 0, canceled: 0 }));
+  const row = Object.fromEntries(months.map((m) => [m.month, m]));
+
+  // evento -> produto, via assinatura
+  const productOf = Object.fromEntries(subs.filter((s) => s.asaas_subscription_id).map((s) => [s.asaas_subscription_id, s.product_slug]));
+  const seenPaid = new Set(), seenRefund = new Set(), revenueBy = {};
+  for (const e of [...events].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))) {
+    const key = e.pid ?? e.id, m = row[monthKey(e.created_at)];
+    if (!m || !e.amount_cents) continue;
+    if (PAID_EVENTS.has(e.event) && !seenPaid.has(key)) {
+      seenPaid.add(key); m.receivedCents += e.amount_cents;
+      const slug = productOf[e.asaas_subscription_id] ?? 'outros';
+      revenueBy[slug] = (revenueBy[slug] ?? 0) + e.amount_cents;
+    } else if (REFUND_EVENTS.has(e.event) && !seenRefund.has(key)) {
+      seenRefund.add(key); m.refundsCents += e.amount_cents;
+    }
+  }
+  for (const s of subs) {
+    if (row[monthKey(s.created_at)]) row[monthKey(s.created_at)].newSubs++;
+    if (s.status === 'CANCELED' && row[monthKey(s.updated_at)]) row[monthKey(s.updated_at)].canceled++;
+  }
+
+  const sum = (list, f) => list.reduce((a, s) => a + f(s), 0);
+  const active = subs.filter((s) => s.status === 'ACTIVE');
+  const pending = subs.filter((s) => s.status === 'PENDING');
+  const pastDue = subs.filter((s) => s.status === 'PAST_DUE');
+  const mrrCents = sum(active, (s) => s.price_cents);
+  const c = row[cur], canceledNow = c.canceled;
+  const slugs = [...new Set([...subs.map((s) => s.product_slug), ...Object.keys(revenueBy)])];
+  const totalRev = sum(Object.values(revenueBy), (v) => v) || 1;
+
+  return {
+    kpis: {
+      mrrCents, arrCents: mrrCents * 12, activeCount: active.length,
+      arpuCents: active.length ? Math.round(mrrCents / active.length) : 0,
+      receivedThisMonthCents: c.receivedCents, receivedPrevMonthCents: row[prev].receivedCents,
+      refundsThisMonthCents: c.refundsCents,
+      pendingCents: sum(pending, (s) => s.price_cents), pendingCount: pending.length,
+      atRiskCents: sum(pastDue, (s) => s.price_cents), pastDueCount: pastDue.length,
+      newThisMonth: c.newSubs, canceledThisMonth: canceledNow,
+      churnPct: active.length + canceledNow ? Math.round((canceledNow / (active.length + canceledNow)) * 1000) / 10 : 0,
+    },
+    months,
+    byProduct: slugs.map((slug) => ({
+      slug, name: names[slug] ?? slug,
+      active: active.filter((s) => s.product_slug === slug).length,
+      mrrCents: sum(active.filter((s) => s.product_slug === slug), (s) => s.price_cents),
+      received12mCents: revenueBy[slug] ?? 0, sharePct: Math.round(((revenueBy[slug] ?? 0) / totalRev) * 100),
+    })).sort((a, b) => b.received12mCents - a.received12mCents || b.mrrCents - a.mrrCents),
+    overdue: pastDue.map((s) => ({ email: s.email, product: s.product_slug, priceCents: s.price_cents, since: s.updated_at })).slice(0, 50),
+  };
+}
+
 const readJson = async (req) => {
   let size = 0; const chunks = [];
   for await (const c of req) { size += c.length; if (size > 64 * 1024) throw new HttpError(413, 'payload grande'); chunks.push(c); }
@@ -182,6 +246,21 @@ const routes = {
       pastDueCount: subs.filter((s) => s.status === 'PAST_DUE').length,
       byProduct, subscriptions: subs.slice(0, 200),
       gatewayMode: ASAAS_BASE.includes('sandbox') ? 'sandbox' : 'producao',
+    };
+  },
+
+
+  'GET /admin/finance': async (req) => {
+    await adminFromJwt(req);
+    const since = new Date(Date.now() - 400 * 86400e3).toISOString();
+    const [subs, events, prods] = await Promise.all([
+      sb('pay_subscriptions?select=email,product_slug,status,price_cents,created_at,updated_at,asaas_subscription_id'),
+      sb(`pay_events?select=id,event,amount_cents,created_at,asaas_subscription_id,pid:payload->payment->>id&created_at=gte.${since}&limit=10000`),
+      sb('pay_products?select=slug,name'),
+    ]);
+    return {
+      ...buildFinance(subs, events, new Date(), Object.fromEntries(prods.map((p) => [p.slug, p.name]))),
+      gatewayMode: ASAAS_BASE.includes('sandbox') ? 'sandbox' : 'producao', generatedAt: new Date().toISOString(),
     };
   },
 
