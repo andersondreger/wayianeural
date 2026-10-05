@@ -70,3 +70,37 @@ ON CONFLICT (slug) DO NOTHING;
 -- O portal so redireciona para a pagina de assinatura deles.
 UPDATE public.pay_products SET checkout_url = 'https://bela360.wayia.com.br/assinatura' WHERE slug = 'bela360';
 UPDATE public.pay_products SET checkout_url = 'https://wayar.wayia.com.br/dashboard/billing' WHERE slug = 'wayar';
+
+-- ============================================================================
+-- Projetos com cobranca PROPRIA que reportam ao painel (criar). RODAR ANTES de subir o payments-api novo:
+-- o webhook central passa a filtrar por managed_by.
+-- ============================================================================
+-- price_cents e o valor cobrado por CICLO; o MRR divide o anual por 12.
+ALTER TABLE public.pay_subscriptions ADD COLUMN IF NOT EXISTS cycle TEXT NOT NULL DEFAULT 'MONTHLY' CHECK (cycle IN ('MONTHLY', 'YEARLY'));
+-- central = criada/atualizada pelo payments-api; external = reportada pelo projeto via /ingest/subscription.
+ALTER TABLE public.pay_subscriptions ADD COLUMN IF NOT EXISTS managed_by TEXT NOT NULL DEFAULT 'central' CHECK (managed_by IN ('central', 'external'));
+
+-- WayIA Criar cobra pelo proprio checkout (Asaas): mensal R$ 89,90 / anual R$ 899,00 com 11 dias gratis.
+UPDATE public.pay_products SET price_cents = 8990, checkout_url = 'https://criar.wayia.com.br/conta' WHERE slug = 'criar';
+
+-- Suporte: tickets abertos pelos clientes dos projetos (chegam por /ingest/ticket).
+CREATE TABLE IF NOT EXISTS public.pay_tickets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    source_ref TEXT NOT NULL UNIQUE,             -- '<projeto>:<id do ticket no projeto>' (idempotencia)
+    product_slug TEXT NOT NULL,
+    email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'answered', 'closed')),
+    reply TEXT,
+    replied_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pay_tickets_status ON public.pay_tickets(status, created_at DESC);
+ALTER TABLE public.pay_tickets ENABLE ROW LEVEL SECURITY;   -- sem policy: so service_role
+
+-- Suporte por WhatsApp (Evolution): telefone e consentimento do cliente por chamado.
+ALTER TABLE public.pay_tickets ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.pay_tickets ADD COLUMN IF NOT EXISTS whatsapp_optin BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.pay_tickets ADD COLUMN IF NOT EXISTS wa_reply_status TEXT;   -- sent | failed | null

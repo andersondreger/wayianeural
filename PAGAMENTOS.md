@@ -35,3 +35,20 @@ Header: x-service-token: <PAY_SERVICE_TOKEN>      (so no servidor do projeto!)
 ## Precos propostos (editaveis no admin)
 Base: docs internos (imob360 R$149/349/749, pet360 Pro R$149) e mercado BR (Imobzi R$129, Trinks R$40-81, MyWebar ~US$25).
 Pet360 R$149 · ImobiVision R$249 · Bela360 R$97 (preco real) · WayAR a partir de R$97 (planos reais 97/297/897) · WayIA Criar R$79 · WayFlow Neural R$197.
+
+## Criar (cobranca propria + reporte ao painel)
+O **WayIA Criar** cobra pelo checkout dele (Asaas: mensal R$ 89,90 / anual R$ 899,00, 11 dias gratis) e **reporta** ao painel:
+- `POST /ingest/subscription` (header `x-service-token`): estado da assinatura + evento de pagamento. Alimenta MRR (anual = valor/12), recebido por mes, inadimplentes.
+- `POST /ingest/ticket`: chamado de suporte aberto no Criar. `GET /service/tickets?email&product`: o Criar le a resposta do suporte.
+- Painel (Financeiro → **Suporte**): lista e responde chamados. `GET /admin/tickets`, `POST /admin/tickets/:id/reply`.
+- Produto `criar` tem `checkout_url` (portal so redireciona; nunca cria 2a assinatura).
+
+### Suporte por WhatsApp (Evolution `evo2.wayiaflow.com.br`)
+- Chamado novo → aviso 1:1 ao admin (`SUPPORT_WHATSAPP_TO`) pela instancia `SUPPORT_EVO_INSTANCE` (padrao `nucleo`).
+- Resposta no painel → vai por WhatsApp ao cliente **somente se ele marcou o consentimento** no chamado (LGPD / regras do WhatsApp); sempre fica visivel no painel dele.
+- Nao usa webhook de entrada: as instancias `nucleo` e a do WaySend ja tem webhook proprio e nao devem ser trocadas.
+
+### Subir (ordem importa)
+1. Rodar o final de `supabase_payments.sql` no Supabase (colunas `cycle`, `managed_by`, tabela `pay_tickets`, colunas de WhatsApp).
+2. `.env`: `EVOLUTION_API_KEY`, `SUPPORT_WHATSAPP_TO`, (opcional) `SUPPORT_EVO_INSTANCE`.
+3. `docker compose up -d --build`. Antes do passo 1 o servico sobe sem quebrar webhook/financeiro (sonda a migracao), mas os endpoints `/ingest/*` respondem 503.

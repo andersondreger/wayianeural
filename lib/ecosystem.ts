@@ -13,7 +13,7 @@ export interface EcosystemProject {
 export const ECOSYSTEM: EcosystemProject[] = [
   { slug: 'pet360', name: 'Pet360', billing: 'central', url: 'https://pet360.wayia.com.br/' },
   { slug: 'imob360', name: 'ImobiVision 360', billing: 'central', url: 'https://imob360.wayia.com.br/' },
-  { slug: 'criar', name: 'WayIA Criar', billing: 'central', url: 'https://criar.wayia.com.br/' },
+  { slug: 'criar', name: 'WayIA Criar', billing: 'own', url: 'https://criar.wayia.com.br/' },
   { slug: 'neural', name: 'WayFlow Neural', billing: 'central', url: 'https://wayia.com.br/app/' },
   { slug: 'bela360', name: 'Bela360', billing: 'own', url: 'https://bela360.wayia.com.br/' },
   { slug: 'wayar', name: 'WayAR', billing: 'own', url: 'https://wayar.wayia.com.br/' },

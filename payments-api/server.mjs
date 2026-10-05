@@ -14,6 +14,12 @@ const ASAAS_KEY = env('ASAAS_API_KEY');
 const WEBHOOK_TOKEN = env('ASAAS_WEBHOOK_TOKEN');
 const SERVICE_TOKEN = env('PAY_SERVICE_TOKEN'); // projetos do ecossistema consultam /entitlement com isto
 const ADMINS = env('ADMIN_EMAILS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+// WhatsApp (Evolution API da propria infra): aviso de chamado novo para o admin e resposta ao cliente que aceitou.
+const EVO_URL = env('EVOLUTION_API_URL', 'https://evo2.wayiaflow.com.br').replace(/\/+$/, '');
+const EVO_KEY = env('EVOLUTION_API_KEY');
+const EVO_INSTANCE = env('SUPPORT_EVO_INSTANCE', 'nucleo');
+const SUPPORT_TO = env('SUPPORT_WHATSAPP_TO'); // numero do admin (DDI+DDD+numero)
+const PANEL_URL = env('PANEL_URL', 'https://wayia.com.br/app/');
 const ALLOWED_ORIGINS = env('ALLOWED_ORIGINS', 'https://wayia.com.br').split(',').map((s) => s.trim());
 
 // ---------- helpers ----------
@@ -109,7 +115,9 @@ export function buildFinance(subs, events, now = new Date(), names = {}) {
   const active = subs.filter((s) => s.status === 'ACTIVE');
   const pending = subs.filter((s) => s.status === 'PENDING');
   const pastDue = subs.filter((s) => s.status === 'PAST_DUE');
-  const mrrCents = sum(active, (s) => s.price_cents);
+  // Plano anual entra no MRR dividido por 12 (price_cents e o valor cobrado por ciclo).
+  const mrrOf = (s) => (s.cycle === 'YEARLY' ? Math.round(s.price_cents / 12) : s.price_cents);
+  const mrrCents = sum(active, mrrOf);
   const c = row[cur], canceledNow = c.canceled;
   const slugs = [...new Set([...subs.map((s) => s.product_slug), ...Object.keys(revenueBy)])];
   const totalRev = sum(Object.values(revenueBy), (v) => v) || 1;
@@ -129,7 +137,7 @@ export function buildFinance(subs, events, now = new Date(), names = {}) {
     byProduct: slugs.map((slug) => ({
       slug, name: names[slug] ?? slug,
       active: active.filter((s) => s.product_slug === slug).length,
-      mrrCents: sum(active.filter((s) => s.product_slug === slug), (s) => s.price_cents),
+      mrrCents: sum(active.filter((s) => s.product_slug === slug), mrrOf),
       received12mCents: revenueBy[slug] ?? 0, sharePct: Math.round(((revenueBy[slug] ?? 0) / totalRev) * 100),
     })).sort((a, b) => b.received12mCents - a.received12mCents || b.mrrCents - a.mrrCents),
     overdue: pastDue.map((s) => ({ email: s.email, product: s.product_slug, priceCents: s.price_cents, since: s.updated_at })).slice(0, 50),
@@ -146,6 +154,102 @@ const readJson = async (req) => {
 export const claimDecision = (sub, ref) => (!ref ? 'ok' : !sub?.claimed_ref ? 'claim' : sub.claimed_ref === ref ? 'ok' : 'conflict');
 
 const validCpfCnpj = (v) => /^\d{11}$|^\d{14}$/.test(v);
+
+
+
+// ---------- WhatsApp ----------
+/** So digitos, com DDI 55 se vier so DDD+numero. null se nao parecer um celular/fixo BR valido. */
+export function normalizePhone(v) {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length === 10 || d.length === 11) return `55${d}`;
+  if ((d.length === 12 || d.length === 13) && d.startsWith('55')) return d;
+  return null;
+}
+
+/** Mensagem 1:1 transacional (nunca em massa): um chamado -> um aviso. */
+export const ticketAlertText = (t) =>
+  `🆘 *Novo chamado* (${t.product_slug})\n` +
+  `${t.email}${t.phone ? ` · ${t.phone}` : ''}\n` +
+  `*${t.subject}*\n\n${String(t.message).slice(0, 700)}\n\n` +
+  `Responder: ${PANEL_URL} → Financeiro → Suporte`;
+
+export const ticketReplyText = (t, reply) =>
+  `Olá! Sobre o seu chamado "${t.subject}":\n\n${reply}\n\n— Suporte WayIA`;
+
+export async function sendWhatsApp(to, text, doFetch = fetch) {
+  if (!EVO_KEY || !to) return false;
+  try {
+    const res = await doFetch(`${EVO_URL}/message/sendText/${encodeURIComponent(EVO_INSTANCE)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: EVO_KEY },
+      body: JSON.stringify({ number: to, text }), signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) console.warn(`[wa] evolution respondeu ${res.status}`);
+    return res.ok;
+  } catch (e) { console.warn(`[wa] falhou: ${e.message}`); return false; }
+}
+
+// Migracao do Supabase aplicada? (colunas cycle/managed_by). Sonda com cache curto: o servico novo pode
+// subir ANTES do SQL sem quebrar webhook/financeiro; quando o SQL rodar, passa a valer sozinho.
+let migratedCache = { at: 0, ok: false };
+const isMigrated = async () => {
+  if (Date.now() - migratedCache.at < 60_000) return migratedCache.ok;
+  let ok = false;
+  try { await sb('pay_subscriptions?select=cycle,managed_by&limit=1'); ok = true; } catch { /* sem colunas ainda */ }
+  migratedCache = { at: Date.now(), ok };
+  return ok;
+};
+
+// ---------- ingestao de projetos com cobranca propria ----------
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
+const SUB_STATUS = new Set(['PENDING', 'ACTIVE', 'PAST_DUE', 'CANCELED']);
+const SLUG_RE = /^[a-z0-9-]{1,40}$/;
+const requireService = (req) => { if (!safeEq(req.headers['x-service-token'], SERVICE_TOKEN)) throw new HttpError(401, 'token invalido'); };
+const clip = (v, n) => String(v ?? '').trim().slice(0, n);
+
+// Normaliza e valida o corpo de /ingest/subscription (puro, testavel).
+export function parseIngestSubscription(b) {
+  const product = clip(b?.product, 40), email = clip(b?.email, 320).toLowerCase();
+  if (!SLUG_RE.test(product)) throw new HttpError(400, 'product invalido');
+  if (!EMAIL_RE.test(email)) throw new HttpError(400, 'email invalido');
+  if (!SUB_STATUS.has(b?.status)) throw new HttpError(400, 'status invalido');
+  if (!Number.isInteger(b?.priceCents) || b.priceCents < 100 || b.priceCents > 10_000_000) throw new HttpError(400, 'priceCents invalido');
+  const cycle = b?.cycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
+  const end = b?.currentPeriodEnd ? new Date(b.currentPeriodEnd) : null;
+  if (end && Number.isNaN(end.getTime())) throw new HttpError(400, 'currentPeriodEnd invalido');
+  const sub = {
+    email, product_slug: product, status: b.status, cycle, price_cents: b.priceCents,
+    current_period_end: end ? end.toISOString() : null,
+    asaas_customer_id: clip(b?.asaasCustomerId, 80) || null,
+    asaas_subscription_id: clip(b?.asaasSubscriptionId, 80) || null,
+    invoice_url: clip(b?.invoiceUrl, 500) || null,
+    managed_by: 'external', updated_at: new Date().toISOString(),
+  };
+  let event = null;
+  const e = b?.event;
+  if (e) {
+    if (!clip(e.id, 120) || !clip(e.event, 80)) throw new HttpError(400, 'event invalido');
+    event = {
+      id: `ext:${product}:${clip(e.id, 120)}`, event: clip(e.event, 80), asaas_subscription_id: sub.asaas_subscription_id,
+      amount_cents: Number.isInteger(e.amountCents) && e.amountCents > 0 ? e.amountCents : null,
+      payload: { source: product, payment: { id: clip(e.paymentId, 80) || null } },
+      ...(e.at && !Number.isNaN(new Date(e.at).getTime()) ? { created_at: new Date(e.at).toISOString() } : {}),
+    };
+  }
+  return { sub, event };
+}
+
+export function parseIngestTicket(b) {
+  const product = clip(b?.product, 40), email = clip(b?.email, 320).toLowerCase();
+  if (!SLUG_RE.test(product)) throw new HttpError(400, 'product invalido');
+  if (!EMAIL_RE.test(email)) throw new HttpError(400, 'email invalido');
+  const ref = clip(b?.ref, 80), subject = clip(b?.subject, 160), message = clip(b?.message, 4000);
+  if (!ref || !subject || !message) throw new HttpError(400, 'ref, subject e message obrigatorios');
+  const phone = normalizePhone(b?.phone);
+  return {
+    source_ref: `${product}:${ref}`, product_slug: product, email, subject, message,
+    phone, whatsapp_optin: Boolean(phone && b?.whatsappOptin === true), // so responde por WhatsApp com consentimento explicito
+  };
+}
 
 // ---------- handlers ----------
 const routes = {
@@ -219,7 +323,8 @@ const routes = {
         next.setDate(next.getDate() + 33);
         patch.current_period_end = next.toISOString();
       }
-      await sb(`pay_subscriptions?asaas_subscription_id=eq.${encodeURIComponent(subId)}`, { method: 'PATCH', body: patch });
+      // managed_by=central: assinaturas de projetos com cobranca propria (ex.: criar) sao atualizadas so por /ingest/subscription.
+      await sb(`pay_subscriptions?asaas_subscription_id=eq.${encodeURIComponent(subId)}${(await isMigrated()) ? '&managed_by=eq.central' : ''}`, { method: 'PATCH', body: patch });
     }
     return { received: true };
   },
@@ -249,18 +354,18 @@ const routes = {
 
   'GET /admin/summary': async (req) => {
     await adminFromJwt(req);
-    const subs = await sb('pay_subscriptions?select=product_slug,status,price_cents,email,created_at,billing_type&order=created_at.desc');
+    const subs = await sb(`pay_subscriptions?select=product_slug,status,price_cents,${(await isMigrated()) ? 'cycle,' : ''}email,created_at,billing_type&order=created_at.desc`);
     const active = subs.filter((s) => s.status === 'ACTIVE');
     const byProduct = {};
     for (const s of subs) {
       const p = (byProduct[s.product_slug] ??= { active: 0, pending: 0, pastDue: 0, canceled: 0, mrrCents: 0 });
-      if (s.status === 'ACTIVE') { p.active++; p.mrrCents += s.price_cents; }
+      if (s.status === 'ACTIVE') { p.active++; p.mrrCents += s.cycle === 'YEARLY' ? Math.round(s.price_cents / 12) : s.price_cents; }
       else if (s.status === 'PENDING') p.pending++;
       else if (s.status === 'PAST_DUE') p.pastDue++;
       else p.canceled++;
     }
     return {
-      mrrCents: active.reduce((a, s) => a + s.price_cents, 0),
+      mrrCents: active.reduce((a, s) => a + (s.cycle === 'YEARLY' ? Math.round(s.price_cents / 12) : s.price_cents), 0),
       activeCount: active.length, pendingCount: subs.filter((s) => s.status === 'PENDING').length,
       pastDueCount: subs.filter((s) => s.status === 'PAST_DUE').length,
       byProduct, subscriptions: subs.slice(0, 200),
@@ -273,7 +378,7 @@ const routes = {
     await adminFromJwt(req);
     const since = new Date(Date.now() - 400 * 86400e3).toISOString();
     const [subs, events, prods] = await Promise.all([
-      sb('pay_subscriptions?select=email,product_slug,status,price_cents,created_at,updated_at,asaas_subscription_id'),
+      (async () => sb(`pay_subscriptions?select=email,product_slug,status,price_cents,${(await isMigrated()) ? 'cycle,' : ''}created_at,updated_at,asaas_subscription_id`))(),
       sb(`pay_events?select=id,event,amount_cents,created_at,asaas_subscription_id,pid:payload->payment->>id&created_at=gte.${since}&limit=10000`),
       sb('pay_products?select=slug,name'),
     ]);
@@ -292,6 +397,48 @@ const routes = {
       { method: 'PATCH', body: { claimed_ref: null }, prefer: 'return=representation' });
     if (!rows?.length) throw new HttpError(404, 'assinatura nao encontrada');
     return { released: true };
+  },
+
+
+  // ---- projetos com cobranca propria (criar): o projeto e a fonte da verdade e nos avisa a cada mudanca ----
+  'POST /ingest/subscription': async (req) => {
+    requireService(req);
+    if (!(await isMigrated())) throw new HttpError(503, 'migracao do banco pendente (supabase_payments.sql)');
+    const { sub, event } = parseIngestSubscription(await readJson(req));
+    const [prod] = await sb(`pay_products?slug=eq.${encodeURIComponent(sub.product_slug)}&select=slug,checkout_url`);
+    if (!prod) throw new HttpError(404, 'produto nao encontrado');
+    if (!prod.checkout_url) throw new HttpError(409, 'produto com cobranca central: use /checkout');
+    const [existing] = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(sub.email)}&product_slug=eq.${sub.product_slug}&select=managed_by`);
+    if (existing && existing.managed_by !== 'external') throw new HttpError(409, 'assinatura central: nao sobrescrever');
+    if (event) {
+      await sb('pay_events?on_conflict=id', { method: 'POST', prefer: 'resolution=ignore-duplicates,return=minimal', body: event });
+    }
+    await sb('pay_subscriptions?on_conflict=email,product_slug', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: sub });
+    return { received: true };
+  },
+
+  'POST /ingest/ticket': async (req) => {
+    requireService(req);
+    const t = parseIngestTicket(await readJson(req));
+    // return=representation + ignore-duplicates: so devolve linha quando o chamado e NOVO (reenvio da fila nao avisa de novo).
+    const created = await sb('pay_tickets?on_conflict=source_ref', { method: 'POST', prefer: 'resolution=ignore-duplicates,return=representation', body: t });
+    if (created?.length && SUPPORT_TO) void sendWhatsApp(normalizePhone(SUPPORT_TO), ticketAlertText(t));
+    return { received: true };
+  },
+
+  // Cliente le as respostas dos proprios tickets (chamado pelo servidor do projeto).
+  'GET /service/tickets': async (req, url) => {
+    requireService(req);
+    const email = (url.searchParams.get('email') ?? '').toLowerCase(), product = url.searchParams.get('product') ?? '';
+    if (!EMAIL_RE.test(email) || !SLUG_RE.test(product)) throw new HttpError(400, 'email e product obrigatorios');
+    return sb(`pay_tickets?email=eq.${encodeURIComponent(email)}&product_slug=eq.${product}&select=source_ref,subject,status,reply,replied_at,created_at&order=created_at.desc&limit=50`);
+  },
+
+  'GET /admin/tickets': async (req, url) => {
+    await adminFromJwt(req);
+    const status = url.searchParams.get('status');
+    const filter = status && ['open', 'answered', 'closed'].includes(status) ? `&status=eq.${status}` : '';
+    return sb(`pay_tickets?select=*&order=created_at.desc&limit=200${filter}`);
   },
 
   'GET /admin/products': async (req) => { await adminFromJwt(req); return sb('pay_products?order=sort.asc'); },
@@ -313,6 +460,27 @@ const updateProduct = async (req, slug) => {
   return rows[0];
 };
 
+
+// POST /admin/tickets/:id/reply  Body: {reply?, status?}
+const updateTicket = async (req, id) => {
+  await adminFromJwt(req);
+  const b = await readJson(req);
+  const patch = { updated_at: new Date().toISOString() };
+  if (typeof b.reply === 'string' && b.reply.trim()) { patch.reply = b.reply.trim().slice(0, 4000); patch.replied_at = patch.updated_at; patch.status = 'answered'; }
+  if (['open', 'answered', 'closed'].includes(b.status)) patch.status = b.status;
+  const rows = await sb(`pay_tickets?id=eq.${id}`, { method: 'PATCH', body: patch, prefer: 'return=representation' });
+  if (!rows?.length) throw new HttpError(404, 'ticket nao encontrado');
+  const row = rows[0];
+  let whatsapp = 'skipped';
+  if (patch.reply) {
+    if (row.whatsapp_optin && row.phone) {
+      whatsapp = (await sendWhatsApp(row.phone, ticketReplyText(row, patch.reply))) ? 'sent' : 'failed';
+      await sb(`pay_tickets?id=eq.${id}`, { method: 'PATCH', body: { wa_reply_status: whatsapp } }).catch(() => {});
+    }
+  }
+  return { ...row, whatsapp };
+};
+
 // ---------- server ----------
 export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -327,7 +495,10 @@ export const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, headers); return res.end(); }
   try {
     const put = url.pathname.match(/^\/admin\/products\/([a-z0-9-]+)$/);
-    const handler = put && req.method === 'PUT' ? (r) => updateProduct(r, put[1]) : routes[`${req.method} ${url.pathname}`];
+    const tk = url.pathname.match(/^\/admin\/tickets\/([0-9a-f-]{36})\/reply$/);
+    const handler = put && req.method === 'PUT' ? (r) => updateProduct(r, put[1])
+      : tk && req.method === 'POST' ? (r) => updateTicket(r, tk[1])
+      : routes[`${req.method} ${url.pathname}`];
     if (!handler) throw new HttpError(404, 'nao encontrado');
     const out = await handler(req, url);
     res.writeHead(200, headers); res.end(JSON.stringify(out));

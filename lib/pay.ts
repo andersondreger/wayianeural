@@ -25,6 +25,22 @@ export interface PaySubscription {
   billing_type?: string | null;
 }
 
+export interface PayTicket {
+  id: string;
+  source_ref: string;
+  product_slug: string;
+  email: string;
+  subject: string;
+  message: string;
+  status: 'open' | 'answered' | 'closed';
+  reply: string | null;
+  replied_at: string | null;
+  created_at: string;
+  phone?: string | null;
+  whatsapp_optin?: boolean;
+  wa_reply_status?: 'sent' | 'failed' | null;
+}
+
 export const brl = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -50,6 +66,9 @@ export const payApi = {
     }),
   adminSummary: () => call<any>('/admin/summary'),
   adminFinance: () => call<Finance>('/admin/finance'),
+  adminTickets: (status?: PayTicket['status']) => call<PayTicket[]>(`/admin/tickets${status ? `?status=${status}` : ''}`),
+  adminReplyTicket: (id: string, body: { reply?: string; status?: PayTicket['status'] }) =>
+    call<PayTicket & { whatsapp?: 'sent' | 'failed' | 'skipped' }>(`/admin/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify(body) }),
   adminProducts: () => call<PayProduct[]>('/admin/products'),
   adminUpdateProduct: (slug: string, patch: { price_cents?: number; active?: boolean }) =>
     call<PayProduct>(`/admin/products/${slug}`, { method: 'PUT', body: JSON.stringify(patch) }),

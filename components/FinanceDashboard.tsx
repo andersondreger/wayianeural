@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { payApi, brl, Finance } from '../lib/pay';
+import { SupportInbox } from './SupportInbox';
 import { ECOSYSTEM, BILLING_LABEL, EcosystemProject } from '../lib/ecosystem';
 
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -123,8 +124,8 @@ export function FinanceDashboard() {
                 <span className={`shrink-0 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${c.billing === 'central' ? 'text-orange-400 border-orange-500/30' : c.billing === 'own' ? 'text-sky-400 border-sky-500/30' : 'text-gray-500 border-white/10'}`}>{BILLING_LABEL[c.billing]}</span>
               </div>
               {c.billing === 'none' && <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Projeto em desenvolvimento. A cobrança entra quando for integrado.</p>}
-              {c.billing === 'own' && <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Cobra pelo Asaas do próprio projeto. A receita ainda não aparece aqui.</p>}
-              {c.billing === 'central' && (
+              {c.billing === 'own' && !c.active && !c.received12mCents && <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Cobra pelo Asaas do próprio projeto. A receita aparece aqui quando o projeto passar a reportar.</p>}
+              {(c.billing === 'central' || (c.billing === 'own' && (c.active > 0 || c.received12mCents > 0))) && (
                 <div className="grid grid-cols-3 gap-3 text-[10px] font-bold uppercase tracking-widest">
                   <div><div className="text-gray-500 text-[8px]">MRR</div><div className="text-base font-black">{brl(c.mrrCents)}</div></div>
                   <div><div className="text-gray-500 text-[8px]">12 meses</div><div className="text-base font-black">{brl(c.received12mCents)}</div></div>
@@ -148,6 +149,8 @@ export function FinanceDashboard() {
           </table>
         </section>
       )}
+      <SupportInbox />
+
       <p className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">Atualizado {new Date(f.generatedAt).toLocaleString('pt-BR')}. Custo por cliente entra quando o consumo (usage) for medido.</p>
     </div>
   );

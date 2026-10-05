@@ -37,6 +37,9 @@ services:
       ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina no .env}
       PAY_SERVICE_TOKEN: ${PAY_SERVICE_TOKEN:?defina no .env}
       ADMIN_EMAILS: ${ADMIN_EMAILS:?defina no .env}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina no .env}
+      SUPPORT_EVO_INSTANCE: ${SUPPORT_EVO_INSTANCE:-nucleo}
+      SUPPORT_WHATSAPP_TO: ${SUPPORT_WHATSAPP_TO:-}
     networks:
       - wayia-net
 
