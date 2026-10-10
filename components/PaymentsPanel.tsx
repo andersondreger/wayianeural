@@ -3,17 +3,17 @@ import { Loader2, Crown, CheckCircle2, ExternalLink, Mail, ShieldCheck, AlertTri
 import { supabase } from '../lib/supabase';
 import { payApi, brl, sendEmailCode, verifyEmailCode, PayProduct, PaySubscription } from '../lib/pay';
 
-const STATUS_LABEL: Record<string, string> = {
+export const STATUS_LABEL: Record<string, string> = {
   ACTIVE: 'Ativo', PENDING: 'Aguardando pagamento', PAST_DUE: 'Em atraso', CANCELED: 'Cancelado',
 };
-const STATUS_COLOR: Record<string, string> = {
+export const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'text-green-400', PENDING: 'text-yellow-400', PAST_DUE: 'text-red-400', CANCELED: 'text-gray-500',
 };
 
-const inputCls = 'w-full bg-white/[0.03] border border-white/10 rounded-xl py-4 px-5 outline-none focus:border-orange-500/40 font-bold text-sm';
-const btnCls = 'px-6 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all disabled:opacity-50';
+export const inputCls = 'w-full bg-white/[0.03] border border-white/10 rounded-xl py-4 px-5 outline-none focus:border-orange-500/40 font-bold text-sm';
+export const btnCls = 'px-6 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all disabled:opacity-50';
 
-function EmailGate({ onDone }: { onDone: () => void }) {
+export function EmailGate({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);

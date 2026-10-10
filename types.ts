@@ -1,5 +1,5 @@
 
-export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD' | 'THANK_YOU';
+export type ViewState = 'LANDING' | 'LOGIN' | 'ONBOARDING' | 'DASHBOARD' | 'THANK_YOU' | 'BILLING';
 
 export type DashboardTab = 'overview' | 'atendimento' | 'instancias' | 'ar' | 'agentes' | 'n8n' | 'settings' | 'pagamentos' | 'admin_pay' | 'financeiro';
 

@@ -44,15 +44,33 @@ export interface PayTicket {
 export const brl = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+// Link assinado vindo de um projeto (/app/?pay=<slug>#h=<token>): vale so para pagar aquele produto, nao pede codigo de novo.
+// Fica na sessionStorage (some ao fechar a aba) e e tirado da URL na hora para nao vazar em historico/compartilhamento.
+const HANDOFF_KEY = 'wayia_handoff';
+export function captureHandoff(): string | null {
+  try {
+    const m = window.location.hash.match(/[#&]h=([\w.-]+)/);
+    if (m) {
+      sessionStorage.setItem(HANDOFF_KEY, m[1]);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    return sessionStorage.getItem(HANDOFF_KEY);
+  } catch { return null; }
+}
+export const hasHandoff = () => !!captureHandoff();
+
 async function call<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth) {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error('login necessario');
-    headers.Authorization = `Bearer ${session.access_token}`;
+    const handoff = captureHandoff();
+    if (session) headers.Authorization = `Bearer ${session.access_token}`;
+    else if (handoff) headers['x-handoff'] = handoff;
+    else throw new Error('login necessario');
   }
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && headers['x-handoff']) { try { sessionStorage.removeItem(HANDOFF_KEY); } catch { /* sem storage */ } }
   if (!res.ok) throw new Error(data.error || `erro ${res.status}`);
   return data as T;
 }
@@ -64,6 +82,11 @@ export const payApi = {
     call<{ invoiceUrl?: string | null; alreadyActive?: boolean; redirect?: string; externalUrl?: string }>('/checkout', {
       method: 'POST', body: JSON.stringify({ product, cpfCnpj }),
     }),
+  hub: () => call<Hub>('/me/hub'),
+  myPayments: () => call<MyPayments>('/me/payments'),
+  myExport: () => call<any>('/me/export'),
+  cancel: (product: string) => call<{ canceled: boolean }>('/me/cancel', { method: 'POST', body: JSON.stringify({ product }) }),
+  deleteMyData: () => call<{ deleted: boolean }>('/me/delete', { method: 'POST', body: '{}' }),
   adminSummary: () => call<any>('/admin/summary'),
   adminFinance: () => call<Finance>('/admin/finance'),
   adminTickets: (status?: PayTicket['status']) => call<PayTicket[]>(`/admin/tickets${status ? `?status=${status}` : ''}`),
@@ -94,3 +117,19 @@ export interface Finance {
   gatewayMode: string;
   generatedAt: string;
 }
+
+export interface MyPayments {
+  subscriptions: { product_slug: string; status: PaySubscription['status']; price_cents: number; billing_type: string | null;
+    invoice_url: string | null; current_period_end: string | null; created_at: string; canCancel: boolean }[];
+  invoices: { product: string; amountCents: number; status: string | null; event: string; dueDate: string | null; paidAt: string | null;
+    billingType: string | null; url: string | null; at: string }[];
+  tickets: { product_slug: string; subject: string; status: PayTicket['status']; reply: string | null; replied_at: string | null; created_at: string }[];
+}
+
+export interface HubProject {
+  slug: string; name: string; description: string | null; tier: 'free' | 'paid'; price_cents: number; cycle: 'MONTHLY' | 'YEARLY';
+  app_url: string; checkout_url: string | null; trial_days: number;
+  state: 'FREE' | 'TRIAL' | 'ACTIVE' | 'GRACE' | 'EXPIRED' | 'NONE'; access: 'full' | 'readonly' | 'none'; active: boolean;
+  daysLeft: number | null; trialEndsAt: string | null; currentPeriodEnd: string | null;
+}
+export interface Hub { email: string; scoped: boolean; projects: HubProject[] }

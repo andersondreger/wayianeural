@@ -2,7 +2,7 @@
 // Gateway: Asaas (o mesmo do WayAR). Banco/auth: Supabase do wayianeural.
 // Segredos so por variavel de ambiente (.env da VPS), nunca no navegador.
 import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, createHmac } from 'node:crypto';
 
 const env = (k, d = '') => process.env[k] ?? d;
 const PORT = Number(env('PORT', '3000'));
@@ -13,6 +13,10 @@ const ASAAS_BASE = env('ASAAS_API_BASE_URL', 'https://sandbox.asaas.com/api/v3')
 const ASAAS_KEY = env('ASAAS_API_KEY');
 const WEBHOOK_TOKEN = env('ASAAS_WEBHOOK_TOKEN');
 const SERVICE_TOKEN = env('PAY_SERVICE_TOKEN'); // projetos do ecossistema consultam /entitlement com isto
+// Chave por produto ("pet360=tok1,imob360=tok2"): quando o produto tem a propria, o token global NAO vale para ele.
+export const parseProductTokens = (s) => Object.fromEntries(
+  String(s ?? '').split(',').map((p) => p.trim().split('=')).filter(([k, v]) => k && v).map(([k, v]) => [k.trim(), v.trim()]));
+const PRODUCT_TOKENS = parseProductTokens(env('PAY_SERVICE_TOKENS'));
 const ADMINS = env('ADMIN_EMAILS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 // WhatsApp (Evolution API da propria infra): aviso de chamado novo para o admin e resposta ao cliente que aceitou.
 const EVO_URL = env('EVOLUTION_API_URL', 'https://evo2.wayiaflow.com.br').replace(/\/+$/, '');
@@ -20,6 +24,7 @@ const EVO_KEY = env('EVOLUTION_API_KEY');
 const EVO_INSTANCE = env('SUPPORT_EVO_INSTANCE', 'nucleo');
 const SUPPORT_TO = env('SUPPORT_WHATSAPP_TO'); // numero do admin (DDI+DDD+numero)
 const PANEL_URL = env('PANEL_URL', 'https://wayia.com.br/app/');
+const HANDOFF_SECRET = env('HANDOFF_SECRET'); // assina o link projeto -> Financeiro (so billing, 2h)
 const ALLOWED_ORIGINS = env('ALLOWED_ORIGINS', 'https://wayia.com.br').split(',').map((s) => s.trim());
 
 // ---------- helpers ----------
@@ -27,6 +32,95 @@ const safeEq = (a = '', b = '') => {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 };
+
+export const serviceTokenOk = (given, product, tokens = PRODUCT_TOKENS, global = SERVICE_TOKEN) =>
+  safeEq(given, tokens[product] ?? global);
+
+// Rate limit em memoria (janela fixa) por chave; suficiente para uma instancia unica atras do nginx.
+export function makeRateLimiter(max, windowMs, now = () => Date.now()) {
+  const hits = new Map();
+  return (key) => {
+    const t = now();
+    if (hits.size > 5000) for (const [k, v] of hits) if (t - v.start >= windowMs) hits.delete(k);
+    const h = hits.get(key);
+    if (!h || t - h.start >= windowMs) { hits.set(key, { start: t, n: 1 }); return true; }
+    return ++h.n <= max;
+  };
+}
+const limitEntitlement = makeRateLimiter(120, 60_000);
+const limitMe = makeRateLimiter(30, 60_000);
+const clientIp = (req) => String(req.headers['x-real-ip'] ?? req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+
+// Payload minimo guardado do webhook (LGPD): so o necessario para o financeiro e a fatura do cliente.
+export const slimEvent = (evt) => ({
+  id: evt.id, event: evt.event,
+  ...(evt.payment ? { payment: {
+    id: evt.payment.id, subscription: evt.payment.subscription, value: evt.payment.value, status: evt.payment.status,
+    billingType: evt.payment.billingType, dueDate: evt.payment.dueDate, paymentDate: evt.payment.paymentDate,
+    invoiceUrl: evt.payment.invoiceUrl, bankSlipUrl: evt.payment.bankSlipUrl,
+  } } : {}),
+});
+
+// Faturas do cliente: uma linha por cobranca (ultimo evento de cada pagamento), mais recentes primeiro.
+export function buildInvoices(subs, events) {
+  const bySub = new Map(subs.filter((s) => s.asaas_subscription_id).map((s) => [s.asaas_subscription_id, s.product_slug]));
+  const byPay = new Map();
+  for (const e of [...events].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
+    const p = e.payload?.payment;
+    if (!p?.id || !bySub.has(e.asaas_subscription_id)) continue;   // so cobrancas de assinaturas DESTE cliente
+    byPay.set(p.id, {
+      product: bySub.get(e.asaas_subscription_id), amountCents: Math.round((p.value ?? (e.amount_cents ?? 0) / 100) * 100),
+      status: p.status ?? null, event: e.event, dueDate: p.dueDate ?? null, paidAt: p.paymentDate ?? null,
+      billingType: p.billingType ?? null, url: p.invoiceUrl ?? p.bankSlipUrl ?? null, at: e.created_at,
+    });
+  }
+  return [...byPay.values()].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+
+// ---------- acesso por produto: gratis / teste / pago / expirado ----------
+const DAY = 86_400_000;
+// Estado calculado so no servidor. access: 'full' (usa tudo) | 'readonly' (expirou: ve os dados, nao cria) | 'none'.
+export function accessState(sub, prod, now = new Date()) {
+  const base = { trialEndsAt: sub?.trial_ends_at ?? null, currentPeriodEnd: sub?.current_period_end ?? null, daysLeft: null };
+  if (prod?.tier === 'free') return { ...base, state: 'FREE', access: 'full', active: true };
+  const end = sub?.current_period_end ? new Date(sub.current_period_end) : null;
+  if (sub?.status === 'ACTIVE' && (!end || end > now)) return { ...base, state: 'ACTIVE', access: 'full', active: true };
+  if (sub?.status === 'PAST_DUE' && end && end > now) return { ...base, state: 'GRACE', access: 'full', active: true };
+  const tEnd = sub?.trial_ends_at ? new Date(sub.trial_ends_at) : null;
+  if (tEnd && (sub.status === 'TRIAL' || sub.status === 'PENDING') && tEnd > now) {
+    return { ...base, state: 'TRIAL', access: 'full', active: true, daysLeft: Math.ceil((tEnd - now) / DAY) };
+  }
+  if (sub) return { ...base, state: 'EXPIRED', access: 'readonly', active: false };
+  return { ...base, state: 'NONE', access: prod?.trial_days > 0 && !prod?.checkout_url ? 'full' : 'none', active: false };
+}
+
+// Hub do cliente: um card por produto ativo do catalogo, com o estado dele.
+export function buildHub(products, subs, now = new Date()) {
+  const bySlug = new Map(subs.map((s) => [s.product_slug, s]));
+  return products.map((p) => ({
+    slug: p.slug, name: p.name, description: p.description, tier: p.tier ?? 'paid', price_cents: p.price_cents, cycle: p.cycle,
+    app_url: p.app_url, checkout_url: p.checkout_url ?? null, trial_days: p.trial_days ?? 0,
+    ...accessState(bySlug.get(p.slug), p, now),
+  }));
+}
+
+// Link assinado projeto -> Financeiro: escopo unico (um e-mail, um produto), so billing, expira.
+const b64u = (b) => Buffer.from(b).toString('base64url');
+export function signHandoff(email, product, secret = HANDOFF_SECRET, ttlMs = 2 * 3_600_000, now = Date.now()) {
+  if (!secret) return null;
+  const body = b64u(JSON.stringify({ e: email, p: product, x: now + ttlMs }));
+  return `${body}.${createHmac('sha256', secret).update(body).digest('base64url')}`;
+}
+export function verifyHandoff(tok, secret = HANDOFF_SECRET, now = Date.now()) {
+  if (!secret || typeof tok !== 'string') return null;
+  const [body, sig] = tok.split('.');
+  if (!body || !sig || !safeEq(sig, createHmac('sha256', secret).update(body).digest('base64url'))) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body, 'base64url').toString());
+    return p.x > now && p.e && p.p ? { email: String(p.e).toLowerCase(), product: String(p.p) } : null;
+  } catch { return null; }
+}
 
 const ACTIVE = new Set(['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED', 'PAYMENT_RESTORED', 'PAYMENT_ANTICIPATED']);
 const PAST_DUE = new Set(['PAYMENT_OVERDUE', 'PAYMENT_CREDIT_CARD_CAPTURE_REFUSED', 'PAYMENT_CHARGEBACK_REQUESTED',
@@ -203,6 +297,24 @@ const isMigrated = async () => {
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 const SUB_STATUS = new Set(['PENDING', 'ACTIVE', 'PAST_DUE', 'CANCELED']);
 const SLUG_RE = /^[a-z0-9-]{1,40}$/;
+let trialSchemaCache = { at: 0, ok: false };
+const hasTrialSchema = async () => {
+  if (Date.now() - trialSchemaCache.at < 60_000) return trialSchemaCache.ok;
+  let ok = false;
+  try { await sb('pay_products?select=tier,trial_days&limit=1'); await sb('pay_subscriptions?select=trial_ends_at&limit=1'); ok = true; } catch { /* sem colunas ainda */ }
+  trialSchemaCache = { at: Date.now(), ok };
+  return ok;
+};
+// Identidade do cliente: login normal (completo) ou link assinado do projeto (so billing daquele produto).
+const identify = async (req) => {
+  const h = req.headers['x-handoff'];
+  if (h) {
+    const p = verifyHandoff(h);
+    if (!p) throw new HttpError(401, 'link expirado, entre com seu e-mail');
+    return { email: p.email, scopedProduct: p.product };
+  }
+  return { ...(await userFromJwt(req)), scopedProduct: null };
+};
 const requireService = (req) => { if (!safeEq(req.headers['x-service-token'], SERVICE_TOKEN)) throw new HttpError(401, 'token invalido'); };
 const clip = (v, n) => String(v ?? '').trim().slice(0, n);
 
@@ -261,28 +373,100 @@ const routes = {
     return { email: u.email, isAdmin: ADMINS.includes(u.email), subscriptions: subs };
   },
 
-  'POST /checkout': async (req) => {
+  // Hub do cliente: todos os projetos com o estado de cada um. Link assinado ve so o produto de origem.
+  'GET /me/hub': async (req) => {
+    const u = await identify(req);
+    if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
+    const [products, subs] = await Promise.all([
+      sb('pay_products?active=eq.true&order=sort.asc'),
+      sb(`pay_subscriptions?email=eq.${encodeURIComponent(u.email)}&select=*`),
+    ]);
+    const list = buildHub(u.scopedProduct ? products.filter((p) => p.slug === u.scopedProduct) : products, subs);
+    return { email: u.email, scoped: !!u.scopedProduct, projects: list };
+  },
+
+  // ---- Area do cliente: tudo filtrado pelo e-mail do JWT (nunca por id vindo do front) ----
+  'GET /me/payments': async (req) => {
     const u = await userFromJwt(req);
+    if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
+    const subs = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(u.email)}&select=product_slug,status,price_cents,billing_type,invoice_url,current_period_end,asaas_subscription_id,created_at`);
+    const ids = subs.map((s) => s.asaas_subscription_id).filter(Boolean);
+    const events = ids.length
+      ? await sb(`pay_events?asaas_subscription_id=in.(${ids.map((i) => `"${i.replace(/"/g, '')}"`).join(',')})&select=event,amount_cents,asaas_subscription_id,payload,created_at&order=created_at.desc&limit=500`)
+      : [];
+    const tickets = await sb(`pay_tickets?email=eq.${encodeURIComponent(u.email)}&select=product_slug,subject,status,reply,replied_at,created_at&order=created_at.desc&limit=50`).catch(() => []);
+    return {
+      subscriptions: subs.map(({ asaas_subscription_id, ...s }) => ({ ...s, canCancel: !!asaas_subscription_id && s.status !== 'CANCELED' })),
+      invoices: buildInvoices(subs, events), tickets,
+    };
+  },
+
+  // LGPD: copia dos dados que guardamos sobre o cliente.
+  'GET /me/export': async (req) => {
+    const u = await userFromJwt(req);
+    if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
+    const q = encodeURIComponent(u.email);
+    const subs = await sb(`pay_subscriptions?email=eq.${q}&select=*`);
+    const ids = subs.map((s) => s.asaas_subscription_id).filter(Boolean);
+    const events = ids.length ? await sb(`pay_events?asaas_subscription_id=in.(${ids.map((i) => `"${i.replace(/"/g, '')}"`).join(',')})&select=*`) : [];
+    const tickets = await sb(`pay_tickets?email=eq.${q}&select=*`).catch(() => []);
+    return { email: u.email, exportedAt: new Date().toISOString(), subscriptions: subs, events, tickets };
+  },
+
+  // Cancela a renovacao no gateway. Somente assinaturas deste cliente e geridas aqui (central).
+  'POST /me/cancel': async (req) => {
+    const u = await userFromJwt(req);
+    if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
+    const { product } = await readJson(req);
+    const [sub] = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(u.email)}&product_slug=eq.${encodeURIComponent(String(product))}`);
+    if (!sub?.asaas_subscription_id) throw new HttpError(404, 'assinatura nao encontrada');
+    if (sub.managed_by && sub.managed_by !== 'central') throw new HttpError(409, 'esta assinatura e cobrada pelo proprio projeto; cancele la');
+    if (sub.status !== 'CANCELED') {
+      await asaas(`/subscriptions/${encodeURIComponent(sub.asaas_subscription_id)}`, { method: 'DELETE' });
+      await sb(`pay_subscriptions?id=eq.${sub.id}`, { method: 'PATCH', body: { status: 'CANCELED', updated_at: new Date().toISOString() } });
+    }
+    return { canceled: true };
+  },
+
+  // LGPD: exclusao. Bloqueada enquanto houver assinatura ativa (cancele antes). Cobrancas ja pagas
+  // ficam anonimizadas no log do gateway por obrigacao fiscal; aqui removemos assinaturas, chamados e telefone.
+  'POST /me/delete': async (req) => {
+    const u = await userFromJwt(req);
+    if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
+    const q = encodeURIComponent(u.email);
+    const subs = await sb(`pay_subscriptions?email=eq.${q}&select=status`);
+    if (subs.some((s) => s.status === 'ACTIVE' || s.status === 'PAST_DUE')) throw new HttpError(409, 'cancele as assinaturas ativas antes de excluir os dados');
+    await sb(`pay_tickets?email=eq.${q}`, { method: 'DELETE' }).catch(() => {});
+    await sb(`pay_subscriptions?email=eq.${q}`, { method: 'DELETE' });
+    return { deleted: true };
+  },
+
+  'POST /checkout': async (req) => {
+    const u = await identify(req);
     const { product, cpfCnpj, billingType = 'UNDEFINED' } = await readJson(req);
+    if (u.scopedProduct && u.scopedProduct !== product) throw new HttpError(403, 'link vale so para o produto de origem');
     const doc = String(cpfCnpj ?? '').replace(/\D/g, '');
     if (!['UNDEFINED', 'PIX', 'CREDIT_CARD', 'BOLETO'].includes(billingType)) throw new HttpError(400, 'forma de pagamento invalida');
 
     const [prod] = await sb(`pay_products?slug=eq.${encodeURIComponent(String(product))}&active=eq.true`);
     if (!prod) throw new HttpError(404, 'produto nao encontrado');
+    if (prod.tier === 'free') throw new HttpError(400, 'projeto gratuito, nao precisa de pagamento');
 
     // projeto com cobranca propria: nunca cria 2a assinatura aqui (cobraria o cliente em dobro)
     if (prod.checkout_url) return { externalUrl: prod.checkout_url };
     if (!validCpfCnpj(doc)) throw new HttpError(400, 'CPF/CNPJ invalido');
 
     const [existing] = await sb(`pay_subscriptions?email=eq.${encodeURIComponent(u.email)}&product_slug=eq.${prod.slug}`);
-    if (isEntitled(existing)) return { alreadyActive: true, redirect: prod.app_url };
+    if (accessState(existing, prod).state === 'ACTIVE') return { alreadyActive: true, redirect: prod.app_url };
     if (existing?.status === 'PENDING' && existing.invoice_url) return { invoiceUrl: existing.invoice_url };
 
     const customerId = existing?.asaas_customer_id ?? (await asaas('/customers', {
       method: 'POST', body: JSON.stringify({ name: u.name || u.email.split('@')[0], email: u.email, cpfCnpj: doc }),
     })).id;
 
-    const due = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    // Durante o teste a 1a cobranca vence no ultimo dia dele; depois dele, amanha.
+    const trialEnd = existing?.trial_ends_at ? new Date(existing.trial_ends_at).getTime() : 0;
+    const due = new Date(Math.max(Date.now() + DAY, trialEnd)).toISOString().slice(0, 10);
     const sub = await asaas('/subscriptions', {
       method: 'POST',
       body: JSON.stringify({
@@ -311,7 +495,7 @@ const routes = {
     if (evt.id) {
       await sb('pay_events?on_conflict=id', {
         method: 'POST', prefer: 'resolution=ignore-duplicates,return=minimal',
-        body: { id: evt.id, event: evt.event, asaas_subscription_id: subId, amount_cents: amount, payload: evt },
+        body: { id: evt.id, event: evt.event, asaas_subscription_id: subId, amount_cents: amount, payload: slimEvent(evt) },
       });
     }
     const status = eventToStatus(evt.event);
@@ -331,25 +515,46 @@ const routes = {
 
   // Chamado pelos outros projetos (pet360, imob360...) no servidor deles.
   'GET /entitlement': async (req, url) => {
-    if (!safeEq(req.headers['x-service-token'], SERVICE_TOKEN)) throw new HttpError(401, 'token invalido');
+    if (!limitEntitlement(clientIp(req))) throw new HttpError(429, 'muitas requisicoes');
     const email = (url.searchParams.get('email') ?? '').toLowerCase();
     const product = url.searchParams.get('product') ?? '';
+    if (!serviceTokenOk(req.headers['x-service-token'], product)) throw new HttpError(401, 'token invalido');
     if (!email || !product) throw new HttpError(400, 'email e product obrigatorios');
     const ref = (url.searchParams.get('ref') ?? '').slice(0, 120) || null;
     const q = `pay_subscriptions?email=eq.${encodeURIComponent(email)}&product_slug=eq.${encodeURIComponent(product)}`;
+    const trialOn = await hasTrialSchema();
+    const [prod] = trialOn ? await sb(`pay_products?slug=eq.${encodeURIComponent(product)}`) : [];
     let [sub] = await sb(q);
-    let active = isEntitled(sub), claimed = null;
-    if (active && ref) {
+
+    // Primeiro acesso a um produto pago: abre o teste (1x por e-mail+produto; o unique impede repetir).
+    if (!sub && prod && prod.tier === 'paid' && prod.trial_days > 0 && !prod.checkout_url) {
+      await sb('pay_subscriptions?on_conflict=email,product_slug', {
+        method: 'POST', prefer: 'resolution=ignore-duplicates,return=minimal',
+        body: { email, product_slug: product, status: 'TRIAL', price_cents: prod.price_cents, trial_ends_at: new Date(Date.now() + prod.trial_days * DAY).toISOString() },
+      });
+      [sub] = await sb(q);
+    }
+
+    let st = trialOn ? accessState(sub, prod) : { state: sub?.status ?? 'NONE', access: isEntitled(sub) ? 'full' : 'none', active: isEntitled(sub), trialEndsAt: null, daysLeft: null, currentPeriodEnd: sub?.current_period_end ?? null };
+    let claimed = null;
+    if (st.active && ref && prod?.tier !== 'free') {
       let d = claimDecision(sub, ref);
       if (d === 'claim') {
         // condicional (claimed_ref is null): se dois negocios chegam juntos, so um ganha
         const won = await sb(`${q}&claimed_ref=is.null`, { method: 'PATCH', body: { claimed_ref: ref }, prefer: 'return=representation' });
         if (!won?.length) { [sub] = await sb(q); d = claimDecision(sub, ref); } else d = 'ok';
       }
-      if (d === 'conflict') active = false;
+      if (d === 'conflict') st = { ...st, active: false, access: 'none', state: 'CLAIMED' };
       claimed = sub.claimed_ref ?? ref;
     }
-    return { active, status: sub?.status ?? 'NONE', currentPeriodEnd: sub?.current_period_end ?? null, ...(claimed && !active ? { reason: 'claimed_by_other_business' } : {}) };
+    // Quando nao esta pago/gratis, devolve o link do Financeiro ja com o login assinado (sem pedir e-mail de novo).
+    const tok = st.state === 'ACTIVE' || st.state === 'FREE' ? null : signHandoff(email, product);
+    const payUrl = `${PANEL_URL}?pay=${encodeURIComponent(product)}${tok ? `#h=${tok}` : ''}`;
+    return {
+      active: st.active, status: sub?.status ?? 'NONE', state: st.state, access: st.access, readOnly: st.access === 'readonly',
+      daysLeft: st.daysLeft, trialEndsAt: st.trialEndsAt, currentPeriodEnd: st.currentPeriodEnd, payUrl,
+      ...(st.state === 'CLAIMED' || (claimed && !st.active) ? { reason: 'claimed_by_other_business' } : {}),
+    };
   },
 
   'GET /admin/summary': async (req) => {
@@ -489,7 +694,7 @@ export const server = http.createServer(async (req, res) => {
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     Object.assign(headers, {
       'Access-Control-Allow-Origin': origin, Vary: 'Origin',
-      'Access-Control-Allow-Headers': 'authorization, content-type', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+      'Access-Control-Allow-Headers': 'authorization, content-type, x-handoff', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     });
   }
   if (req.method === 'OPTIONS') { res.writeHead(204, headers); return res.end(); }

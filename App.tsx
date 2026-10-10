@@ -10,6 +10,8 @@ import { ThankYouPage } from './views/ThankYouPage';
 import { BusinessQuizData } from './components/BusinessQuiz';
 
 import { ViewState, UserSession } from './types';
+import { AccountPanel } from './components/AccountPanel';
+import { captureHandoff } from './lib/pay';
 
 const ADMIN_EMAIL = 'dregerr.anderson@gmail.com';
 
@@ -68,7 +70,7 @@ export default function App() {
     const pay = params.get('pay');
     if (pay && /^[a-z0-9-]{1,32}$/.test(pay)) {
       setPayProduct(pay);
-      setView('DASHBOARD');
+      setView(captureHandoff() ? 'BILLING' : 'DASHBOARD');
     }
   }, []);
 
@@ -140,6 +142,11 @@ export default function App() {
             onCompleteQuiz={handleCompleteQuiz}
             onBack={() => setView('LANDING')}
           />
+        )}
+        {view === 'BILLING' && (
+          <div className="min-h-screen bg-[#050505] text-white p-6 md:p-12">
+            <div className="max-w-6xl mx-auto"><AccountPanel initialProduct={payProduct} /></div>
+          </div>
         )}
         {view === 'DASHBOARD' && user && (
           <Dashboard

@@ -23,7 +23,7 @@ export const ECOSYSTEM: EcosystemProject[] = [
   { slug: 'wayface', name: 'WayFace', billing: 'none' },
   { slug: 'wayfarm', name: 'WayFarm', billing: 'none' },
   { slug: 'waydroid', name: 'WayDroid', billing: 'none' },
-  { slug: 'waysend', name: 'WaySend', billing: 'none' },
+  { slug: 'waysend', name: 'WaySend', billing: 'central', url: 'https://send.wayia.com.br/' },
   { slug: 'matelandia', name: 'Matelandia', billing: 'none' },
   { slug: 'videos', name: 'WayIA Videos', billing: 'none' },
 ];

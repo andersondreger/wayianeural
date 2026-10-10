@@ -104,3 +104,22 @@ ALTER TABLE public.pay_tickets ENABLE ROW LEVEL SECURITY;   -- sem policy: so se
 ALTER TABLE public.pay_tickets ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE public.pay_tickets ADD COLUMN IF NOT EXISTS whatsapp_optin BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.pay_tickets ADD COLUMN IF NOT EXISTS wa_reply_status TEXT;   -- sent | failed | null
+
+-- ============================================================================
+-- Gratis / teste de 11 dias por produto / waySend. RODAR ANTES de subir o payments-api novo
+-- (sem isso o /entitlement cai no comportamento antigo: sem teste e sem produto gratis).
+-- ============================================================================
+ALTER TABLE public.pay_products ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'paid' CHECK (tier IN ('free', 'paid'));
+ALTER TABLE public.pay_products ADD COLUMN IF NOT EXISTS trial_days INTEGER NOT NULL DEFAULT 11 CHECK (trial_days >= 0);
+ALTER TABLE public.pay_subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
+ALTER TABLE public.pay_subscriptions DROP CONSTRAINT IF EXISTS pay_subscriptions_status_check;
+ALTER TABLE public.pay_subscriptions ADD CONSTRAINT pay_subscriptions_status_check
+  CHECK (status IN ('TRIAL', 'PENDING', 'ACTIVE', 'PAST_DUE', 'CANCELED'));
+
+-- Projetos gratuitos (definidos pelo Anderson): WayAR e Neural. O 3o ainda esta em aberto: UPDATE ... SET tier='free'.
+UPDATE public.pay_products SET tier = 'free' WHERE slug IN ('wayar', 'neural');
+
+-- waySend entra como projeto pago. Preco PROPOSTO (ajustar no admin).
+INSERT INTO public.pay_products (slug, name, description, price_cents, app_url, sort) VALUES
+  ('waysend', 'WaySend', 'Disparos e campanhas de WhatsApp com opt-in, limites e relatorios.', 9700, 'https://send.wayia.com.br/', 7)
+ON CONFLICT (slug) DO NOTHING;

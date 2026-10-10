@@ -18,9 +18,10 @@ import {
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
 import { products } from '../data/products';
-import { PaymentsPanel, AdminPaymentsPanel } from '../components/PaymentsPanel';
+import { AdminPaymentsPanel } from '../components/PaymentsPanel';
 import { payApi } from '../lib/pay';
 import { FinanceDashboard } from '../components/FinanceDashboard';
+import { AccountPanel } from '../components/AccountPanel';
 
 interface DashboardProps {
   user: UserSession;
@@ -387,7 +388,7 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
     { id: 'instancias', label: 'Instâncias', icon: Server },
     { id: 'ar', label: 'RA / WayAR', icon: Scan },
     { id: 'agentes', label: 'Agentes IA', icon: Bot },
-    { id: 'pagamentos', label: 'Projetos & Planos', icon: Crown },
+    { id: 'pagamentos', label: 'Meu Financeiro', icon: Crown },
     ...(isPayAdmin ? [{ id: 'financeiro', label: 'Financeiro', icon: Activity }, { id: 'admin_pay', label: 'Admin Pagamentos', icon: ShieldCheck }] : []),
     { id: 'settings', label: 'Ajustes', icon: Settings2 },
   ];
@@ -732,7 +733,7 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
                 </motion.div>
              ) : activeTab === 'pagamentos' ? (
                 <motion.div key="pagamentos" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
-                  <PaymentsPanel initialProduct={initialProduct} />
+                  <AccountPanel initialProduct={initialProduct} />
                 </motion.div>
              ) : activeTab === 'financeiro' && isPayAdmin ? (
                 <motion.div key="financeiro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
