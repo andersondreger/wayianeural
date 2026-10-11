@@ -21,6 +21,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   // /app/?pay=<projeto>: link de intencao de compra vindo dos outros projetos
   const [payProduct, setPayProduct] = useState<string | undefined>();
+  // /app/?ml=<token_hash>&tab=financeiro: link de acesso de uso unico gerado pelo admin; entra sem pedir codigo por e-mail
+  const [startTab, setStartTab] = useState<'financeiro' | 'pagamentos' | undefined>();
 
   const masterUser: UserSession = {
     email: ADMIN_EMAIL,
@@ -32,6 +34,20 @@ export default function App() {
 
   const checkSession = async () => {
     try {
+      const qs = new URLSearchParams(window.location.search);
+      const ml = qs.get('ml');
+      if (ml && /^[A-Za-z0-9_-]{20,128}$/.test(ml)) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: ml, type: 'magiclink' });
+        if (error) console.error('Link de acesso invalido ou expirado:', error.message);
+        else {
+          const tab = qs.get('tab');
+          setStartTab(tab === 'pagamentos' ? 'pagamentos' : 'financeiro');
+          setView('DASHBOARD');
+        }
+        qs.delete('ml'); qs.delete('tab');
+        const rest = qs.toString();
+        history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
+      }
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
@@ -152,7 +168,7 @@ export default function App() {
           <Dashboard
             user={user}
             onLogout={handleLogout}
-            initialTab={payProduct ? 'pagamentos' : undefined}
+            initialTab={payProduct ? 'pagamentos' : startTab}
             initialProduct={payProduct}
           />
         )}
