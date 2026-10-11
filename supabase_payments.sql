@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.pay_products (
 
 -- 2. Assinaturas por cliente e projeto = o "entitlement" que os outros projetos consultam
 CREATE TABLE IF NOT EXISTS public.pay_subscriptions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT NOT NULL,
     product_slug TEXT NOT NULL REFERENCES public.pay_products(slug),
     status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACTIVE', 'PAST_DUE', 'CANCELED')),
@@ -87,7 +87,7 @@ UPDATE public.pay_products SET price_cents = 8990, checkout_url = 'https://criar
 
 -- Suporte: tickets abertos pelos clientes dos projetos (chegam por /ingest/ticket).
 CREATE TABLE IF NOT EXISTS public.pay_tickets (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_ref TEXT NOT NULL UNIQUE,             -- '<projeto>:<id do ticket no projeto>' (idempotencia)
     product_slug TEXT NOT NULL,
     email TEXT NOT NULL,
@@ -125,3 +125,5 @@ UPDATE public.pay_products SET tier = 'free' WHERE slug IN ('wayar', 'neural');
 INSERT INTO public.pay_products (slug, name, description, price_cents, app_url, sort) VALUES
   ('waysend', 'WaySend', 'Disparos e campanhas de WhatsApp com opt-in, limites e relatorios.', 9700, 'https://send.wayia.com.br/', 7)
 ON CONFLICT (slug) DO NOTHING;
+
+NOTIFY pgrst, 'reload schema';
