@@ -51,7 +51,9 @@ ALTER TABLE public.pay_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pay_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pay_events ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Catalog is public" ON public.pay_products;
 CREATE POLICY "Catalog is public" ON public.pay_products FOR SELECT USING (active);
+DROP POLICY IF EXISTS "Users read own subscriptions" ON public.pay_subscriptions;
 CREATE POLICY "Users read own subscriptions" ON public.pay_subscriptions
     FOR SELECT USING (lower(email) = lower(auth.jwt() ->> 'email'));
 -- pay_events: sem policy = so service_role le/escreve.

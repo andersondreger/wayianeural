@@ -36,6 +36,8 @@ services:
       ASAAS_API_BASE_URL: ${ASAAS_API_BASE_URL:-https://sandbox.asaas.com/api/v3}
       ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina no .env}
       PAY_SERVICE_TOKEN: ${PAY_SERVICE_TOKEN:?defina no .env}
+      PAY_SERVICE_TOKENS: ${PAY_SERVICE_TOKENS:-}
+      HANDOFF_SECRET: ${HANDOFF_SECRET:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:?defina no .env}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina no .env}
       SUPPORT_EVO_INSTANCE: ${SUPPORT_EVO_INSTANCE:-nucleo}
