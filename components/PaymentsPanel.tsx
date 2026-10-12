@@ -13,7 +13,7 @@ export const STATUS_COLOR: Record<string, string> = {
 export const inputCls = 'w-full bg-white/[0.03] border border-white/10 rounded-xl py-4 px-5 outline-none focus:border-orange-500/40 font-bold text-sm';
 export const btnCls = 'px-6 py-4 bg-orange-500 rounded-2xl font-black text-[10px] uppercase tracking-widest italic hover:bg-orange-600 transition-all disabled:opacity-50';
 
-export function EmailGate({ onDone }: { onDone: () => void }) {
+export function EmailGate({ onDone, purple = false }: { onDone: () => void; purple?: boolean }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
@@ -33,6 +33,24 @@ export function EmailGate({ onDone }: { onDone: () => void }) {
     if (error) setErr('Codigo invalido ou expirado'); else onDone();
   };
 
+  if (purple) {
+    const f = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-[#1c0b3d] outline-none focus:border-[#6d28d9]';
+    return (
+      <div className="rounded-[2rem] bg-[#1c0b3d] min-h-[520px] grid place-items-center p-6">
+        <div className="bg-white text-[#1c0b3d] rounded-3xl p-8 w-full max-w-md space-y-4">
+          <p className="text-3xl font-black text-[#6d28d9]">WayIA</p>
+          <h4 className="text-xl font-extrabold">Entre no seu painel</h4>
+          <p className="text-sm text-slate-600">Enviamos um código para o seu e-mail. Sua conta vale para todos os produtos WayIA.</p>
+          <input className={f} type="email" placeholder="voce@empresa.com" value={email} onChange={e => setEmail(e.target.value)} disabled={sent} />
+          {sent && <input className={f} inputMode="numeric" placeholder="Código recebido" value={code} onChange={e => setCode(e.target.value)} />}
+          {err && <p className="text-sm font-bold text-red-600">{err}</p>}
+          <button className="w-full px-5 py-3 rounded-full bg-[#6d28d9] hover:bg-[#5b21b6] text-white text-sm font-bold disabled:opacity-50" disabled={busy || !email || (sent && !code)} onClick={sent ? verify : send}>
+            {busy ? 'Aguarde...' : sent ? 'Entrar' : 'Receber código'}
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="glass p-8 rounded-[2.5rem] border-orange-500/10 max-w-md space-y-5">
       <div className="flex items-center gap-3"><Mail className="text-orange-500" size={20} /><h4 className="text-lg font-black uppercase italic">Confirme seu e-mail</h4></div>

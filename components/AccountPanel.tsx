@@ -116,7 +116,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const nextCharge = subs.filter(s => s.status === 'ACTIVE' && s.current_period_end).map(s => s.current_period_end as string).sort()[0];
 
   if (state === 'loading') return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-[#6d28d9]" size={44} /></div>;
-  if (state === 'gate') return <EmailGate onDone={load} />;
+  if (state === 'gate') return <EmailGate purple onDone={load} />;
 
   const productCard = (p: HubProject) => {
     const b = BADGE[p.state];
