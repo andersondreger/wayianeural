@@ -740,8 +740,8 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
                   </div>
                 </motion.div>
              ) : activeTab === 'pagamentos' ? (
-                <motion.div key="pagamentos" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
-                  <AccountPanel initialProduct={initialProduct} />
+                <motion.div key="pagamentos" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-4 md:p-6 overflow-y-auto h-full custom-scrollbar">
+                  <div className="max-w-[1400px] mx-auto"><AccountPanel embedded initialProduct={initialProduct} /></div>
                 </motion.div>
              ) : activeTab === 'financeiro' && isPayAdmin ? (
                 <motion.div key="financeiro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">

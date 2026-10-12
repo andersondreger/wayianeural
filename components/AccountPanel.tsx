@@ -54,7 +54,8 @@ function ToLogin({ pay }: { pay: string | null }) {
 }
 
 // Area do cliente: produtos liberados, financeiro, chamados e direitos LGPD. Tudo vem filtrado pelo e-mail logado no servidor.
-export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
+// embedded: dentro do painel antigo (que ja tem menu lateral e avatar): sem 2o menu lateral, abas em pilula no topo.
+export function AccountPanel({ initialProduct, embedded = false }: { initialProduct?: string; embedded?: boolean }) {
   const [state, setState] = useState<'loading' | 'gate' | 'ready'>('loading');
   const [data, setData] = useState<MyPayments | null>(null);
   const [hub, setHub] = useState<Hub | null>(null);
@@ -221,7 +222,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
     const canTry = p.state === 'NONE' && p.tier === 'paid' && p.trial_days > 0 && !p.checkout_url;
     const h = hue(p.slug);
     return (
-      <div className="relative h-[250px] md:h-[300px] rounded-[1.75rem] overflow-hidden">
+      <div className={`relative rounded-[1.75rem] overflow-hidden ${embedded ? 'h-[200px] md:h-[240px]' : 'h-[250px] md:h-[300px]'}`}>
         <AnimatePresence mode="wait">
           <motion.div key={p.slug} initial={{ opacity: 0, scale: 1.06 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.7 }}
             className="absolute inset-0 flex flex-col justify-end p-6 md:p-9"
@@ -320,29 +321,31 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
     {demo && <p className="text-sm text-white/60 flex-1 min-w-[220px]">Valores e nomes são exemplos. Entre com sua conta para ver os seus produtos e dados reais.</p>}
     {demo && <a href={loginUrl} className="px-5 py-2.5 rounded-full bg-white text-[#6d28d9] text-sm font-bold">Entrar / Criar conta</a>}
     </div>
-    <div className="rounded-[2rem] overflow-hidden bg-[#1c0b3d] grid md:grid-cols-[230px_1fr] min-h-[640px] text-white">
-      <aside className="bg-white text-[#1c0b3d] p-4 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
-        <div className="hidden md:block text-3xl font-black text-[#6d28d9] px-3 py-4">WayIA</div>
+    <div className={`rounded-[2rem] overflow-hidden bg-[#1c0b3d] grid text-white ${embedded ? 'grid-cols-1' : 'md:grid-cols-[230px_1fr] min-h-[640px]'}`}>
+      <aside className={embedded ? 'p-3 md:px-6 md:pt-5 flex gap-2 overflow-x-auto border-b border-white/10 [scrollbar-width:thin]' : 'bg-white text-[#1c0b3d] p-4 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible'}>
+        {!embedded && <div className="hidden md:block text-3xl font-black text-[#6d28d9] px-3 py-4">WayIA</div>}
         {(ceo ? CEO_NAV : NAV).map(n => (
           <button key={n.id} onClick={() => ceo ? setCeoSection(n.id as CeoSection) : setSection(n.id as Section)}
-            className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-left transition-colors ${(ceo ? ceoSection : section) === n.id ? 'bg-[#ede9fe] text-[#4c1d95]' : 'text-slate-600 hover:bg-slate-50'}`}>
-            <n.icon size={18} /> {n.label}
+            className={embedded
+              ? `flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${(ceo ? ceoSection : section) === n.id ? 'bg-white text-[#1c0b3d]' : 'bg-white/10 text-white/80 hover:bg-white/20'}`
+              : `flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-left transition-colors ${(ceo ? ceoSection : section) === n.id ? 'bg-[#ede9fe] text-[#4c1d95]' : 'text-slate-600 hover:bg-slate-50'}`}>
+            <n.icon size={embedded ? 16 : 18} /> {n.label}
           </button>
         ))}
-        {!ceo && !demo && (
+        {!embedded && !ceo && !demo && (
           <a href="/app/?go=neural" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-slate-600 hover:bg-slate-50"><Box size={18} /> {isAdmin ? 'Instâncias e WayAR' : 'WayFlow Neural'}</a>
         )}
-        <div className="hidden md:flex mt-auto items-center gap-3 rounded-2xl bg-[#f5f3ff] p-3">
+        {!embedded && <div className="hidden md:flex mt-auto items-center gap-3 rounded-2xl bg-[#f5f3ff] p-3">
           {profile.avatar
             ? <img src={profile.avatar} alt={nome} className="w-10 h-10 rounded-full object-cover" />
             : <span className="w-10 h-10 rounded-full bg-[#6d28d9] text-white grid place-items-center font-black text-sm">{nome.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0"><p className="font-bold text-sm truncate">{nome}</p><p className="text-xs text-slate-500 truncate">{email}</p></div>
-        </div>
-        {!demo && <button onClick={signOut} className="hidden md:block text-xs font-bold text-slate-500 hover:text-[#6d28d9] px-4 py-2 text-left">Sair</button>}
+        </div>}
+        {!embedded && !demo && <button onClick={signOut} className="hidden md:block text-xs font-bold text-slate-500 hover:text-[#6d28d9] px-4 py-2 text-left">Sair</button>}
       </aside>
 
-      <main className="p-5 md:p-8 min-w-0 space-y-6">
-        {!demo && (
+      <main className={`min-w-0 space-y-6 ${embedded ? 'p-4 md:p-6' : 'p-5 md:p-8'}`}>
+        {!demo && !embedded && (
           <div className="relative flex justify-end -mb-2">
             <button onClick={() => setMenuOpen(o => !o)} aria-haspopup="menu" aria-expanded={menuOpen} className="flex items-center gap-3 rounded-full bg-white/10 hover:bg-white/20 pl-4 pr-1.5 py-1.5">
               <span className="text-sm font-bold max-w-[160px] truncate">{nome}</span>
@@ -369,7 +372,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
         {!ceo && <>
 
         {section === 'inicio' && (
-          <div className="grid xl:grid-cols-[1fr_340px] gap-6">
+          <div className={`grid gap-6 ${embedded ? '2xl:grid-cols-[1fr_340px]' : 'xl:grid-cols-[1fr_340px]'}`}>
             <div className="space-y-6 min-w-0">
               <div className="rounded-[1.75rem] bg-[#6d22d8] p-7 grid sm:grid-cols-[1fr_220px] gap-6 items-center">
                 <div>
