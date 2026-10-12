@@ -32,14 +32,6 @@ export default function App() {
 
   const applySession = async (sbUser: { email?: string; user_metadata?: Record<string, any> } | null) => {
     if (!sbUser) { setUser(null); setView(v => (v === 'DASHBOARD' || v === 'BILLING' ? 'LANDING' : v)); return; }
-    const qs = new URLSearchParams(window.location.search);
-    // Logado, o destino e o /dashboard (mesma sessao, sem pedir login de novo). So fica aqui para abrir o produto
-    // Neural (?go=neural) ou para o link assinado de cobranca de um projeto.
-    if (qs.get('go') !== 'neural' && !captureHandoff()) {
-      const pay = qs.get('pay');
-      window.location.replace('/dashboard/' + (pay && /^[a-z0-9-]{1,32}$/.test(pay) ? `?pay=${pay}` : ''));
-      return;
-    }
     setUser(toSession(sbUser, false));
     setView(v => (v === 'LANDING' || v === 'ONBOARDING' ? 'DASHBOARD' : v));
     payApi.me().then(m => setUser(toSession(sbUser, m.isAdmin))).catch(() => {});
