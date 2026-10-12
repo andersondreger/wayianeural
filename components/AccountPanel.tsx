@@ -62,6 +62,8 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [profile, setProfile] = useState<{ name: string; phone: string }>({ name: '', phone: '' });
+  const [saved, setSaved] = useState(false);
   const [demo, setDemo] = useState(false);   // /dashboard sem login: painel com dados de exemplo
   const [ceo, setCeo] = useState(false);
   const [ceoSection, setCeoSection] = useState<CeoSection>('geral');
@@ -70,6 +72,10 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
     try {
       const h = await payApi.hub();          // login completo OU link assinado do projeto
       setHub(h);
+      supabase.auth.getUser().then(({ data }) => {
+        const m = data.user?.user_metadata ?? {};
+        setProfile({ name: String(m.full_name ?? ''), phone: String(m.phone ?? '') });
+      }).catch(() => {});
       if (!h.scoped) payApi.me().then(m => setIsAdmin(m.isAdmin)).catch(() => {});   // visao CEO so para admin (o servidor valida de novo)
       setData(h.scoped ? null : await payApi.myPayments());   // faturas/LGPD so com login completo
       setErr(''); setState('ready');
@@ -117,7 +123,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const subs = data?.subscriptions ?? [], invoices = data?.invoices ?? [], tickets = data?.tickets ?? [];
   const released = projects.filter(p => RELEASED.includes(p.state));
   const email = hub?.email ?? '';
-  const nome = email.split('@')[0] || 'cliente';
+  const nome = profile.name.trim() || email.split('@')[0] || 'cliente';
 
   // Fatura atual: assinatura aguardando pagamento, ou cobranca em aberto/vencida.
   const current = useMemo(() => {
@@ -257,10 +263,14 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
             <n.icon size={18} /> {n.label}
           </button>
         ))}
+        {!ceo && !demo && (
+          <a href="/app/?go=neural" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-slate-600 hover:bg-slate-50"><Box size={18} /> WayFlow Neural</a>
+        )}
         <div className="hidden md:flex mt-auto items-center gap-3 rounded-2xl bg-[#f5f3ff] p-3">
           <span className="w-10 h-10 rounded-full bg-[#6d28d9] text-white grid place-items-center font-black text-sm">{nome.slice(0, 2).toUpperCase()}</span>
           <div className="min-w-0"><p className="font-bold text-sm truncate">{nome}</p><p className="text-xs text-slate-500 truncate">{email}</p></div>
         </div>
+        {!demo && <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="hidden md:block text-xs font-bold text-slate-500 hover:text-[#6d28d9] px-4 py-2 text-left">Sair</button>}
       </aside>
 
       <main className="p-5 md:p-8 min-w-0 space-y-6">
@@ -363,6 +373,23 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
         {section === 'config' && (
           <div className="space-y-4 max-w-2xl">
             <h2 className="text-3xl font-black">Configurações</h2>
+            <div className={`${card} p-6 space-y-4`}>
+              <h3 className="font-extrabold text-lg">Meu perfil</h3>
+              <label className="block text-xs font-bold text-slate-500">E-mail (usado no login)
+                <input className={`${field} mt-1 bg-slate-50`} value={email} disabled />
+              </label>
+              <label className="block text-xs font-bold text-slate-500">Nome
+                <input className={`${field} mt-1`} value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} maxLength={80} />
+              </label>
+              <label className="block text-xs font-bold text-slate-500">WhatsApp (com DDD)
+                <input className={`${field} mt-1`} value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} inputMode="tel" maxLength={20} />
+              </label>
+              <button className={primary} disabled={busy === 'prof'} onClick={() => run('prof', async () => {
+                const { error } = await supabase.auth.updateUser({ data: { full_name: profile.name.trim(), phone: profile.phone.trim() } });
+                if (error) throw new Error('Não foi possível salvar o perfil.');
+                setSaved(true); setTimeout(() => setSaved(false), 3000);
+              })}>{busy === 'prof' ? 'Salvando...' : saved ? 'Perfil salvo' : 'Salvar perfil'}</button>
+            </div>
             <div className={`${card} p-6 space-y-4`}>
               <h3 className="font-extrabold text-lg">Privacidade (LGPD)</h3>
               {hub?.scoped
