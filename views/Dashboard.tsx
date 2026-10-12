@@ -404,20 +404,20 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
       <div className="fixed inset-0 grid-engine pointer-events-none opacity-5"></div>
       
       <aside className={`flex flex-col border-r border-white/5 bg-black/40 backdrop-blur-3xl transition-all duration-300 z-50 ${isSidebarExpanded ? 'w-64' : 'w-20'}`}>
-        <div className="p-8 flex justify-center"><Logo size="sm" /></div>
-        <nav className="flex-1 px-4 py-6 space-y-3">
+        <div className="p-8 flex justify-center shrink-0"><Logo size="sm" /></div>
+        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar px-4 py-4 space-y-2">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id as DashboardTab)}
-              className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all ${activeTab === item.id ? 'bg-orange-500/10 text-orange-500 shadow-lg shadow-orange-500/5' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === item.id ? 'bg-orange-500/10 text-orange-500 shadow-lg shadow-orange-500/5' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
             >
               <item.icon size={20} />
               {isSidebarExpanded && <span className="text-[10px] font-black uppercase tracking-[0.2em]">{item.label}</span>}
             </button>
           ))}
         </nav>
-        <div className="p-6 border-t border-white/5">
+        <div className="p-6 border-t border-white/5 shrink-0">
           <button onClick={onLogout} className="w-full flex items-center gap-4 px-4 py-4 text-gray-600 hover:text-orange-500 transition-all font-black uppercase text-[10px] tracking-[0.3em]">
             <LogOut size={18} />
             {isSidebarExpanded && <span>Sair</span>}
