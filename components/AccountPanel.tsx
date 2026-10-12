@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { payApi, brl, MyPayments, Hub, HubProject } from '../lib/pay';
 import { STATUS_LABEL } from './PaymentsPanel';
 import { CeoCenter, CeoSection } from './CeoCenter';
+import { DEMO_HUB, DEMO_PAYMENTS, NEWS } from '../lib/demo';
 
 const dt = (s?: string | null) => (s ? new Date(s).toLocaleDateString('pt-BR') : '—');
 const INV_LABEL: Record<string, string> = {
@@ -61,6 +62,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [demo, setDemo] = useState(false);   // /dashboard sem login: painel com dados de exemplo
   const [ceo, setCeo] = useState(false);
   const [ceoSection, setCeoSection] = useState<CeoSection>('geral');
 
@@ -72,13 +74,18 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
       setData(h.scoped ? null : await payApi.myPayments());   // faturas/LGPD so com login completo
       setErr(''); setState('ready');
     } catch (e: any) {
-      if (/login|sessao|expirado/i.test(e.message)) setState('gate');
+      if (/login|sessao|expirado/i.test(e.message)) {
+        if (window.location.pathname.startsWith('/dashboard')) { setDemo(true); setHub(DEMO_HUB); setData(DEMO_PAYMENTS); setIsAdmin(true); setErr(''); setState('ready'); }
+        else setState('gate');
+      }
       else { setErr(e.message); setState('ready'); }
     }
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const loginUrl = `/app/?start=onboarding${selected ? `&pay=${encodeURIComponent(selected)}` : ''}`;
   const run = async (key: string, fn: () => Promise<void>) => {
+    if (demo) { window.location.href = loginUrl; return; }
     setBusy(key); setErr('');
     try { await fn(); } catch (e: any) { setErr(e.message); }
     setBusy('');
@@ -134,14 +141,20 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
     const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
       <div key={p.slug} role={opens ? 'link' : undefined} tabIndex={opens ? 0 : undefined}
-        onClick={opens ? () => { window.location.href = p.app_url; } : undefined}
-        onKeyDown={opens ? e => { if (e.key === 'Enter') window.location.href = p.app_url; } : undefined}
+        onClick={opens ? () => { window.location.href = demo ? loginUrl : p.app_url; } : undefined}
+        onKeyDown={opens ? e => { if (e.key === 'Enter') window.location.href = demo ? loginUrl : p.app_url; } : undefined}
         className={`${card} p-5 flex flex-col gap-3 transition-all ${opens ? 'cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/40 focus-visible:ring-2 focus-visible:ring-[#6d28d9]' : ''} ${selected === p.slug ? 'ring-2 ring-[#6d28d9]' : ''}`}>
         <div className="flex items-center gap-3">
           <span className="w-10 h-10 rounded-full bg-[#ede9fe] text-[#6d28d9] grid place-items-center shrink-0"><Box size={18} /></span>
           <h4 className="font-extrabold text-lg leading-tight">{p.name}</h4>
         </div>
         <p className="text-sm text-slate-600 leading-snug">{p.description}</p>
+        {p.seats && (
+          <div>
+            <div className="flex justify-between text-xs text-slate-500"><span>Usuários</span><span className="font-bold">{p.seats.used} de {p.seats.total}</span></div>
+            <div className="h-1.5 rounded-full bg-[#ede9fe] mt-1 overflow-hidden"><div className="h-full bg-[#6d28d9] rounded-full" style={{ width: `${Math.min(100, (p.seats.used / p.seats.total) * 100)}%` }} /></div>
+          </div>
+        )}
         {p.state === 'TRIAL' && <p className="text-xs font-bold text-amber-700 inline-flex items-center gap-1.5"><Clock size={13} /> {p.daysLeft} dia(s) de teste · acesso completo</p>}
         {p.state === 'EXPIRED' && <p className="text-xs font-bold text-red-600 inline-flex items-center gap-1.5"><Lock size={13} /> Dados salvos. Assine para voltar a criar.</p>}
         {p.state === 'GRACE' && <p className="text-xs font-bold text-red-600">Regularize até {dt(p.currentPeriodEnd)}.</p>}
@@ -164,6 +177,19 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   };
 
   const grid = (list: HubProject[]) => <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{list.map(productCard)}</div>;
+
+  const newsCard = NEWS.length > 0 && (
+    <div className="px-1 space-y-4">
+      <h3 className="text-xl font-extrabold">Novidades do Ecossistema Way</h3>
+      {NEWS.map((n, k) => (
+        <div key={k} className="border-t border-white/10 first:border-0 pt-3 first:pt-0">
+          <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${n.tag === 'Novo' ? 'bg-violet-100 text-violet-800' : n.tag === 'Melhoria' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{n.tag}</span>
+          <p className="font-bold mt-1.5">{n.title}</p>
+          <p className="text-sm text-white/60">{n.text}</p>
+        </div>
+      ))}
+    </div>
+  );
 
   const financeCard = (
     <div className={`${card} p-6 space-y-4`}>
@@ -211,12 +237,17 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
 
   return (
     <div className="space-y-4">
+    <div className="flex flex-wrap items-center gap-4">
+    {demo && <span className="text-xl font-extrabold">Demonstrativo</span>}
     {isAdmin && (
       <div className="inline-flex rounded-full bg-white/10 p-1 text-sm font-bold">
         <button onClick={() => setCeo(false)} className={`px-5 py-2 rounded-full ${!ceo ? 'bg-white text-[#1c0b3d]' : 'text-white/70'}`}>Visão do cliente</button>
         <button onClick={() => setCeo(true)} className={`px-5 py-2 rounded-full inline-flex items-center gap-2 ${ceo ? 'bg-white text-[#1c0b3d]' : 'text-white/70'}`}><Crown size={14} /> Visão CEO</button>
       </div>
     )}
+    {demo && <p className="text-sm text-white/60 flex-1 min-w-[220px]">Valores e nomes são exemplos. Entre com sua conta para ver os seus produtos e dados reais.</p>}
+    {demo && <a href={loginUrl} className="px-5 py-2.5 rounded-full bg-white text-[#6d28d9] text-sm font-bold">Entrar / Criar conta</a>}
+    </div>
     <div className="rounded-[2rem] overflow-hidden bg-[#1c0b3d] grid md:grid-cols-[230px_1fr] min-h-[640px] text-white">
       <aside className="bg-white text-[#1c0b3d] p-4 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
         <div className="hidden md:block text-3xl font-black text-[#6d28d9] px-3 py-4">WayIA</div>
@@ -235,7 +266,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
       <main className="p-5 md:p-8 min-w-0 space-y-6">
         {err && <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>}
 
-        {ceo && isAdmin && <CeoCenter section={ceoSection} />}
+        {ceo && isAdmin && <CeoCenter section={ceoSection} demo={demo} />}
         {!ceo && <>
 
         {section === 'inicio' && (
@@ -267,7 +298,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
                 </>
               )}
             </div>
-            <div className="space-y-6 min-w-0">{financeCard}{supportCard}</div>
+            <div className="space-y-6 min-w-0">{newsCard}{financeCard}{supportCard}</div>
           </div>
         )}
 

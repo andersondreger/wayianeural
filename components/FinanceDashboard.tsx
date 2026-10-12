@@ -56,11 +56,11 @@ function RevenueBars({ months }: { months: Finance['months'] }) {
   );
 }
 
-export function FinanceDashboard() {
+export function FinanceDashboard({ demo }: { demo?: Finance }) {
   const [f, setF] = useState<Finance | null>(null);
   const [err, setErr] = useState('');
   const [table, setTable] = useState(false);
-  useEffect(() => { payApi.adminFinance().then(setF).catch(e => setErr(e.message)); }, []);
+  useEffect(() => { if (demo) setF(demo); else payApi.adminFinance().then(setF).catch(e => setErr(e.message)); }, [demo]);
 
   if (err) return <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>;
   if (!f) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-white" size={44} /></div>;

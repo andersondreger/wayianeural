@@ -5,7 +5,7 @@ import { payApi, PayTicket } from '../lib/pay';
 const STATUS_LABEL: Record<PayTicket['status'], string> = { open: 'Aberto', answered: 'Respondido', closed: 'Fechado' };
 
 // Caixa de suporte: tickets que os clientes abrem nos projetos (ex.: criar) chegam via /ingest/ticket.
-export function SupportInbox() {
+export function SupportInbox({ demo }: { demo?: PayTicket[] }) {
   const [tickets, setTickets] = useState<PayTicket[] | null>(null);
   const [filter, setFilter] = useState<PayTicket['status'] | ''>('open');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -14,10 +14,11 @@ export function SupportInbox() {
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
 
-  const load = () => payApi.adminTickets(filter || undefined).then(setTickets).catch(e => setErr(e.message));
+  const load = () => demo ? Promise.resolve(setTickets(demo.filter(t => !filter || t.status === filter))) : payApi.adminTickets(filter || undefined).then(setTickets).catch(e => setErr(e.message));
   useEffect(() => { setTickets(null); setErr(''); load(); }, [filter]);
 
   const act = async (t: PayTicket, body: { reply?: string; status?: PayTicket['status'] }) => {
+    if (demo) { setNote('Demonstrativo: entre com sua conta para responder chamados reais.'); return; }
     setBusy(true); setErr(''); setNote('');
     try {
       const r = await payApi.adminReplyTicket(t.id, body);

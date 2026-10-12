@@ -133,6 +133,7 @@ export interface HubProject {
   app_url: string; checkout_url: string | null; trial_days: number;
   state: 'FREE' | 'TRIAL' | 'ACTIVE' | 'GRACE' | 'EXPIRED' | 'NONE'; access: 'full' | 'readonly' | 'none'; active: boolean;
   daysLeft: number | null; trialEndsAt: string | null; currentPeriodEnd: string | null;
+  seats?: { used: number; total: number };   // so aparece quando o produto informa usuarios (ainda nao vem do servidor)
 }
 export interface Hub { email: string; scoped: boolean; projects: HubProject[] }
 

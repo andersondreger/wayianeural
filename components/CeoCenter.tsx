@@ -4,6 +4,7 @@ import { payApi, brl, Overview, OverviewProduct, AccessState, NewProduct } from 
 import { ECOSYSTEM } from '../lib/ecosystem';
 import { FinanceDashboard } from './FinanceDashboard';
 import { SupportInbox } from './SupportInbox';
+import { DEMO_OVERVIEW, DEMO_FINANCE, DEMO_TICKETS } from '../lib/demo';
 
 export type CeoSection = 'geral' | 'clientes' | 'financeiro' | 'suporte';
 
@@ -29,7 +30,7 @@ function Kpi({ label, value, hint, bad }: { label: string; value: string; hint?:
 
 const slugify = (v: string) => v.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
-function NewProductForm({ onDone }: { onDone: () => void }) {
+function NewProductForm({ onDone, demo }: { onDone: () => void; demo?: boolean }) {
   const [f, setF] = useState({ name: '', slug: '', description: '', price: '', app_url: 'https://', tier: 'paid', trial_days: '11' });
   const [slugTouched, setSlugTouched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,7 +38,9 @@ function NewProductForm({ onDone }: { onDone: () => void }) {
   const set = (k: string, v: string) => setF(p => ({ ...p, [k]: v, ...(k === 'name' && !slugTouched ? { slug: slugify(v) } : {}) }));
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setBusy(true); setErr('');
+    e.preventDefault();
+    if (demo) { setErr('Demonstrativo: entre com sua conta de admin para cadastrar produtos.'); return; }
+    setBusy(true); setErr('');
     try {
       const body: NewProduct = {
         slug: f.slug, name: f.name, description: f.description, app_url: f.app_url, tier: f.tier === 'free' ? 'free' : 'paid',
@@ -72,18 +75,18 @@ function NewProductForm({ onDone }: { onDone: () => void }) {
 
 // Visao CEO do /dashboard: todos os produtos do catalogo, quem tem o que, financeiro e suporte.
 // Produto novo cadastrado entra sozinho (vem do catalogo no banco, nao de lista fixa no codigo).
-export function CeoCenter({ section }: { section: CeoSection }) {
+export function CeoCenter({ section, demo }: { section: CeoSection; demo?: boolean }) {
   const [o, setO] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState('');
-  const load = () => payApi.adminOverview().then(setO).catch(e => setErr(e.message));
+  const load = () => demo ? setO(DEMO_OVERVIEW) : payApi.adminOverview().then(setO).catch(e => setErr(e.message));
   useEffect(() => { load(); }, []);
 
   const names = useMemo(() => Object.fromEntries((o?.products ?? []).map(p => [p.slug, p.name])), [o]);
 
-  if (section === 'financeiro') return <FinanceDashboard />;
-  if (section === 'suporte') return <SupportInbox />;
+  if (section === 'financeiro') return <FinanceDashboard demo={demo ? DEMO_FINANCE : undefined} />;
+  if (section === 'suporte') return <SupportInbox demo={demo ? DEMO_TICKETS : undefined} />;
   if (err) return <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>;
   if (!o) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-white" size={44} /></div>;
 
@@ -155,7 +158,7 @@ export function CeoCenter({ section }: { section: CeoSection }) {
         <button onClick={() => setAdding(!adding)} className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white text-[#6d28d9] text-sm font-bold"><Plus size={16} /> Novo produto</button>
       </div>
 
-      {adding && <NewProductForm onDone={() => { setAdding(false); load(); }} />}
+      {adding && <NewProductForm onDone={() => { setAdding(false); load(); }} demo={demo} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi label="ARR" value={brl(mrr * 12)} />
