@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Crown, Users, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { payApi, brl, MyPayments, Hub, HubProject } from '../lib/pay';
-import { EmailGate, STATUS_LABEL } from './PaymentsPanel';
+import { STATUS_LABEL } from './PaymentsPanel';
 import { CeoCenter, CeoSection } from './CeoCenter';
 
 const dt = (s?: string | null) => (s ? new Date(s).toLocaleDateString('pt-BR') : '—');
@@ -43,6 +43,12 @@ const primary = 'inline-flex items-center justify-center gap-2 px-5 py-3 rounded
 const ghost = 'inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full border border-[#6d28d9] text-[#6d28d9] hover:bg-[#6d28d9]/5 text-sm font-bold transition-colors disabled:opacity-50';
 const card = 'bg-white text-[#1c0b3d] rounded-3xl';
 const field = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-[#1c0b3d] outline-none focus:border-[#6d28d9]';
+
+// Sem sessao: um unico login, no site principal (codigo por e-mail). Depois dele o /dashboard abre direto, sem confirmar de novo.
+function ToLogin({ pay }: { pay: string | null }) {
+  useEffect(() => { window.location.replace(`/app/?start=onboarding${pay ? `&pay=${encodeURIComponent(pay)}` : ''}`); }, [pay]);
+  return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-white" size={44} /></div>;
+}
 
 // Area do cliente: produtos liberados, financeiro, chamados e direitos LGPD. Tudo vem filtrado pelo e-mail logado no servidor.
 export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
@@ -116,14 +122,21 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const nextCharge = subs.filter(s => s.status === 'ACTIVE' && s.current_period_end).map(s => s.current_period_end as string).sort()[0];
 
   if (state === 'loading') return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-[#6d28d9]" size={44} /></div>;
-  if (state === 'gate') return <EmailGate purple onDone={load} />;
+  if (state === 'gate') return <ToLogin pay={selected} />;
 
   const productCard = (p: HubProject) => {
     const b = BADGE[p.state];
     const isReleased = RELEASED.includes(p.state);
     const needsPay = p.tier === 'paid' && p.state !== 'ACTIVE';
+    // Estilo Netflix: o card inteiro e o botao. Liberado abre o produto; produto com teste comeca o teste ao entrar.
+    const canTry = p.state === 'NONE' && p.tier === 'paid' && p.trial_days > 0 && !p.checkout_url;
+    const opens = p.access !== 'none' || canTry;
+    const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
-      <div key={p.slug} className={`${card} p-5 flex flex-col gap-3 ${selected === p.slug ? 'ring-2 ring-[#6d28d9]' : ''}`}>
+      <div key={p.slug} role={opens ? 'link' : undefined} tabIndex={opens ? 0 : undefined}
+        onClick={opens ? () => { window.location.href = p.app_url; } : undefined}
+        onKeyDown={opens ? e => { if (e.key === 'Enter') window.location.href = p.app_url; } : undefined}
+        className={`${card} p-5 flex flex-col gap-3 transition-all ${opens ? 'cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/40 focus-visible:ring-2 focus-visible:ring-[#6d28d9]' : ''} ${selected === p.slug ? 'ring-2 ring-[#6d28d9]' : ''}`}>
         <div className="flex items-center gap-3">
           <span className="w-10 h-10 rounded-full bg-[#ede9fe] text-[#6d28d9] grid place-items-center shrink-0"><Box size={18} /></span>
           <h4 className="font-extrabold text-lg leading-tight">{p.name}</h4>
@@ -134,19 +147,18 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
         {p.state === 'GRACE' && <p className="text-xs font-bold text-red-600">Regularize até {dt(p.currentPeriodEnd)}.</p>}
         {p.state === 'ACTIVE' && <p className="text-xs text-slate-500">Acesso até {dt(p.currentPeriodEnd)}</p>}
         {!isReleased && p.tier === 'paid' && <p className="text-sm font-bold">A partir de {brl(p.price_cents)}<span className="text-slate-500 font-medium"> /{p.cycle === 'YEARLY' ? 'ano' : 'mês'}</span></p>}
-        {!isReleased && p.state === 'NONE' && p.trial_days > 0 && !p.checkout_url && <p className="text-xs text-slate-500">{p.trial_days} dias grátis ao entrar no projeto</p>}
-        <div className="mt-auto flex items-center justify-between gap-2 flex-wrap pt-1">
+                <div className="mt-auto flex items-center justify-between gap-2 flex-wrap pt-1">
           <span className={`text-xs font-bold px-3 py-1 rounded-full ${b.cls}`}>{b.label}</span>
-          {p.access !== 'none' && <a href={p.app_url} className="text-[#6d28d9] font-bold text-sm inline-flex items-center gap-1.5 hover:underline">Abrir <ExternalLink size={14} /></a>}
+          {opens && <span className="text-[#6d28d9] font-bold text-sm inline-flex items-center gap-1.5">{canTry ? `Testar ${p.trial_days} dias grátis` : 'Abrir'} <ExternalLink size={14} /></span>}
         </div>
         {needsPay && (p.checkout_url
-          ? <a className={primary} href={p.checkout_url}>Contratar</a>
+          ? <a className={canTry ? ghost : primary} href={p.checkout_url} onClick={stop}>Contratar</a>
           : selected === p.slug
-            ? <div className="flex flex-col gap-2">
+            ? <div className="flex flex-col gap-2" onClick={stop}>
                 <input className={field} inputMode="numeric" placeholder="CPF ou CNPJ (só números)" value={doc} onChange={e => setDoc(e.target.value)} />
                 <button className={primary} disabled={busy === 'k' + p.slug} onClick={() => checkout(p.slug)}>{busy === 'k' + p.slug ? 'Gerando...' : 'Ir para o pagamento'}</button>
               </div>
-            : <button className={primary} onClick={() => { setSelected(p.slug); setErr(''); }}>{p.state === 'TRIAL' ? 'Assinar agora' : 'Contratar'}</button>)}
+            : <button className={canTry ? ghost : primary} onClick={e => { stop(e); setSelected(p.slug); setErr(''); }}>{p.state === 'TRIAL' ? 'Assinar agora' : canTry ? 'Assinar já' : 'Contratar'}</button>)}
       </div>
     );
   };
