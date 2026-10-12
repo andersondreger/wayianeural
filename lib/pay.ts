@@ -102,7 +102,7 @@ export const payApi = {
 // Confirmacao de e-mail por codigo (OTP) so para a area de pagamentos:
 // o login atual do portal nao cria sessao real no Supabase.
 export const sendEmailCode = (email: string) =>
-  supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}/dashboard/` } });
 export const verifyEmailCode = (email: string, token: string) =>
   supabase.auth.verifyOtp({ email, token, type: 'email' });
 

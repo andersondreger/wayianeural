@@ -14,7 +14,7 @@ export function OtpStep({ email, meta, onBack, onDone }: {
 
   const send = async () => {
     setBusy(true); setErr('');
-    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true, data: meta } });
+    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true, data: meta, emailRedirectTo: `${window.location.origin}/dashboard/` } });
     setBusy(false);
     if (error) setErr(/rate|seconds/i.test(error.message) ? 'Aguarde um minuto para pedir outro código.' : 'Não foi possível enviar o código. Confira o e-mail.');
     else setSent(true);
@@ -38,7 +38,7 @@ export function OtpStep({ email, meta, onBack, onDone }: {
         </>
       ) : (
         <form onSubmit={verify} className="space-y-4">
-          <p className="text-[11px] text-gray-400 leading-relaxed">Digite o código que chegou no seu e-mail (olhe também o spam).</p>
+          <p className="text-[11px] text-gray-400 leading-relaxed">Digite aqui o código que chegou no seu e-mail (olhe também o spam). Use o código; não precisa clicar no link do e-mail.</p>
           <input autoFocus required inputMode="numeric" autoComplete="one-time-code" placeholder="Código" value={code} onChange={e => setCode(e.target.value)}
             className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-4 px-5 outline-none focus:border-blue-500/40 font-bold text-lg tracking-[0.4em] text-center" />
           <button disabled={busy || !code} className="w-full px-6 py-4 bg-blue-600 hover:bg-blue-700 rounded-2xl font-black text-[11px] uppercase tracking-widest italic disabled:opacity-50">{busy ? 'Entrando...' : 'Entrar'}</button>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Crown, Users, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2, Crown, ChevronRight, Play, Users, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { payApi, brl, MyPayments, Hub, HubProject } from '../lib/pay';
 import { STATUS_LABEL } from './PaymentsPanel';
@@ -64,6 +65,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [profile, setProfile] = useState<{ name: string; phone: string }>({ name: '', phone: '' });
   const [saved, setSaved] = useState(false);
+  const [spot, setSpot] = useState(0);   // produto em destaque (efeito Netflix)
   const [demo, setDemo] = useState(false);   // /dashboard sem login: painel com dados de exemplo
   const [ceo, setCeo] = useState(false);
   const [ceoSection, setCeoSection] = useState<CeoSection>('geral');
@@ -88,6 +90,12 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+  const nProjects = hub?.projects.length ?? 0;
+  useEffect(() => {
+    if (nProjects < 2) return;
+    const t = setInterval(() => setSpot(i => i + 1), 6000);
+    return () => clearInterval(t);
+  }, [nProjects]);
 
   const loginUrl = `/app/?start=onboarding${selected ? `&pay=${encodeURIComponent(selected)}` : ''}`;
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -149,7 +157,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
       <div key={p.slug} role={opens ? 'link' : undefined} tabIndex={opens ? 0 : undefined}
         onClick={opens ? () => { window.location.href = demo ? loginUrl : p.app_url; } : undefined}
         onKeyDown={opens ? e => { if (e.key === 'Enter') window.location.href = demo ? loginUrl : p.app_url; } : undefined}
-        className={`${card} p-5 flex flex-col gap-3 transition-all ${opens ? 'cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/40 focus-visible:ring-2 focus-visible:ring-[#6d28d9]' : ''} ${selected === p.slug ? 'ring-2 ring-[#6d28d9]' : ''}`}>
+        className={`${card} p-5 flex flex-col gap-3 transition-all ${opens ? 'cursor-pointer hover:scale-[1.04] hover:z-10 hover:shadow-2xl hover:shadow-black/60 focus-visible:ring-2 focus-visible:ring-[#6d28d9]' : ''} ${selected === p.slug ? 'ring-2 ring-[#6d28d9]' : ''}`}>
         <div className="flex items-center gap-3">
           <span className="w-10 h-10 rounded-full bg-[#ede9fe] text-[#6d28d9] grid place-items-center shrink-0"><Box size={18} /></span>
           <h4 className="font-extrabold text-lg leading-tight">{p.name}</h4>
@@ -181,6 +189,55 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
       </div>
     );
   };
+
+  // Fileira horizontal estilo Netflix: rola de lado, cards com zoom ao passar o mouse.
+  const row = (title: string, list: HubProject[], hint?: string) => (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-xl font-extrabold">{title}</h3>
+        {hint && <span className="text-xs text-white/50">{hint}</span>}
+      </div>
+      <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory py-4 -mx-1 px-1 [scrollbar-width:thin]">
+        {list.map(p => <div key={p.slug} className="snap-start shrink-0 w-[270px] flex">{productCard(p)}</div>)}
+      </div>
+    </section>
+  );
+
+  const hue = (slug: string) => slug.split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+  const spotlight = (() => {
+    const list = projects.length ? projects : [];
+    if (!list.length) return null;
+    const p = list[spot % list.length];
+    const rel = RELEASED.includes(p.state);
+    const canTry = p.state === 'NONE' && p.tier === 'paid' && p.trial_days > 0 && !p.checkout_url;
+    const h = hue(p.slug);
+    return (
+      <div className="relative h-[250px] md:h-[300px] rounded-[1.75rem] overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div key={p.slug} initial={{ opacity: 0, scale: 1.06 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.7 }}
+            className="absolute inset-0 flex flex-col justify-end p-6 md:p-9"
+            style={{ background: `radial-gradient(120% 140% at 85% 0%, hsl(${h} 70% 42%) 0%, hsl(${(h + 40) % 360} 60% 20%) 55%, #14072b 100%)` }}>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#14072b] via-[#14072b]/30 to-transparent" />
+            <div className="relative max-w-xl space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-white/70">{rel ? 'No seu ecossistema' : 'Em destaque'}</span>
+              <h2 className="text-4xl md:text-5xl font-black leading-none">{p.name}</h2>
+              <p className="text-white/80 text-sm md:text-base">{p.description}</p>
+              <div className="flex gap-3 flex-wrap pt-1">
+                <button onClick={() => { window.location.href = demo ? loginUrl : (p.access !== 'none' || canTry ? p.app_url : loginUrl); }}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-[#1c0b3d] font-bold text-sm hover:bg-white/90">
+                  <Play size={16} fill="currentColor" /> {rel ? 'Abrir' : canTry ? `Testar ${p.trial_days} dias grátis` : 'Conhecer'}
+                </button>
+                {!rel && <button onClick={() => { setSection('produtos'); setSelected(p.slug); }} className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/15 hover:bg-white/25 font-bold text-sm">Contratar <ChevronRight size={16} /></button>}
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+        <div className="absolute right-5 bottom-5 flex gap-1.5">
+          {list.map((x, i) => <button key={x.slug} aria-label={x.name} onClick={() => setSpot(i)} className={`h-1.5 rounded-full transition-all ${i === spot % list.length ? 'w-6 bg-white' : 'w-2 bg-white/40'}`} />)}
+        </div>
+      </div>
+    );
+  })();
 
   const grid = (list: HubProject[]) => <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{list.map(productCard)}</div>;
 
@@ -300,13 +357,9 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
                   </button>
                 ))}
               </div>
-              {released.length > 0 && grid(released)}
-              {projects.length > released.length && (
-                <>
-                  <p className="text-right text-xs text-white/50">Libera na hora após o pagamento</p>
-                  {grid(projects.filter(p => !RELEASED.includes(p.state)))}
-                </>
-              )}
+              {spotlight}
+              {released.length > 0 && row('Meus produtos', released)}
+              {projects.length > released.length && row('Disponíveis para você', projects.filter(p => !RELEASED.includes(p.state)), 'Libera na hora após o pagamento')}
             </div>
             <div className="space-y-6 min-w-0">{newsCard}{financeCard}{supportCard}</div>
           </div>
