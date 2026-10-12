@@ -4,23 +4,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, User, Mail, Smartphone, LogIn, Sparkles } from 'lucide-react';
 import { GlassButton } from '../components/Buttons';
 import { BusinessQuiz, BusinessQuizData } from '../components/BusinessQuiz';
+import { OtpStep } from '../components/OtpStep';
 
-export function OnboardingPage({ onRegisterTrial, onLogin, onCompleteQuiz, onBack }: {
-  onRegisterTrial: (name: string, email: string, phone: string) => void;
-  onLogin: (email: string) => void;
+// Nenhum caminho aqui cria usuario sem provar o e-mail: login, cadastro e quiz terminam no codigo (OtpStep).
+export function OnboardingPage({ onCompleteQuiz, onBack }: {
   onCompleteQuiz: (data: BusinessQuizData) => void;
   onBack: () => void;
 }) {
+  const [otp, setOtp] = useState<{ email: string; meta?: { full_name?: string; phone?: string } } | null>(null);
   const [isLoginMode, setIsLoginMode] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLoginMode) {
-      onLogin(formData.email);
-    } else {
-      onRegisterTrial(formData.name, formData.email, formData.phone);
-    }
+    setOtp(isLoginMode ? { email: formData.email } : { email: formData.email, meta: { full_name: formData.name, phone: formData.phone } });
   };
 
   return (
@@ -36,11 +33,12 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCompleteQuiz, onBac
 
       {/* LADO ESQUERDO: FORMULARIO INTERATIVO SOBRE O NEGOCIO */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 relative overflow-hidden border-r border-white/5 bg-gradient-to-br from-orange-500/[0.02] to-transparent">
-        <BusinessQuiz onComplete={onCompleteQuiz} />
+        <BusinessQuiz onComplete={d => { onCompleteQuiz(d); setOtp({ email: d.contactEmail, meta: { full_name: d.contactName || d.businessName, phone: d.contactPhone } }); }} />
       </div>
 
       {/* LADO DIREITO: ACESSO GRATUITO OU LOGIN */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 bg-black relative">
+        {otp ? <OtpStep email={otp.email} meta={otp.meta} onBack={() => setOtp(null)} onDone={() => { /* App reage a sessao (onAuthStateChange) */ }} /> : (
         <div className="max-w-md w-full space-y-8 z-10">
           <div className="text-center lg:text-left space-y-4">
              <div className="flex items-center gap-2 text-blue-500 mb-2">
@@ -115,6 +113,7 @@ export function OnboardingPage({ onRegisterTrial, onLogin, onCompleteQuiz, onBac
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

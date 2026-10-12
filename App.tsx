@@ -11,9 +11,15 @@ import { BusinessQuizData } from './components/BusinessQuiz';
 
 import { ViewState, UserSession } from './types';
 import { AccountPanel } from './components/AccountPanel';
-import { captureHandoff } from './lib/pay';
+import { captureHandoff, payApi } from './lib/pay';
 
-const ADMIN_EMAIL = 'dregerr.anderson@gmail.com';
+// Sessao REAL do Supabase (codigo por e-mail). Sem sessao nao existe usuario: nada de conta mestre/fallback.
+// isAdmin vem do servidor (payments-api confere o JWT contra ADMIN_EMAILS), nunca de um e-mail fixo no front.
+const toSession = (u: { email?: string; user_metadata?: Record<string, any> }, isAdmin: boolean): UserSession => {
+  const email = u.email || '';
+  const name = String(u.user_metadata?.full_name || email.split('@')[0] || 'Cliente').trim() || 'Cliente';
+  return { email, name, phone: u.user_metadata?.phone || undefined, isAdmin, trialStart: Date.now(), subscriptionStatus: 'ACTIVE' };
+};
 
 export default function App() {
   const [view, setView] = useState<ViewState>('LANDING');
@@ -24,12 +30,11 @@ export default function App() {
   // /app/?ml=<token_hash>&tab=financeiro: link de acesso de uso unico gerado pelo admin; entra sem pedir codigo por e-mail
   const [startTab, setStartTab] = useState<'financeiro' | 'pagamentos' | undefined>();
 
-  const masterUser: UserSession = {
-    email: ADMIN_EMAIL,
-    name: 'WAYFLOW MASTER',
-    isAdmin: true,
-    trialStart: Date.now(),
-    subscriptionStatus: 'ACTIVE'
+  const applySession = async (sbUser: { email?: string; user_metadata?: Record<string, any> } | null) => {
+    if (!sbUser) { setUser(null); setView(v => (v === 'DASHBOARD' || v === 'BILLING' ? 'LANDING' : v)); return; }
+    setUser(toSession(sbUser, false));
+    setView(v => (v === 'LANDING' || v === 'ONBOARDING' ? 'DASHBOARD' : v));
+    payApi.me().then(m => setUser(toSession(sbUser, m.isAdmin))).catch(() => {});
   };
 
   const checkSession = async () => {
@@ -39,43 +44,26 @@ export default function App() {
       if (ml && /^[A-Za-z0-9_-]{20,128}$/.test(ml)) {
         const { error } = await supabase.auth.verifyOtp({ token_hash: ml, type: 'magiclink' });
         if (error) console.error('Link de acesso invalido ou expirado:', error.message);
-        else {
-          const tab = qs.get('tab');
-          setStartTab(tab === 'pagamentos' ? 'pagamentos' : 'financeiro');
-          setView('DASHBOARD');
-        }
+        else setStartTab(qs.get('tab') === 'pagamentos' ? 'pagamentos' : 'financeiro');
         qs.delete('ml'); qs.delete('tab');
         const rest = qs.toString();
         history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
       }
       const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        setUser({
-          email: session.user.email || '',
-          name: session.user.email?.split('@')[0].toUpperCase(),
-          isAdmin: session.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
-          trialStart: Date.now(),
-          subscriptionStatus: 'ACTIVE'
-        });
-        setView('DASHBOARD');
-      } else {
-        // Fallback imediato para dashboard se já estiver navegando
-        setUser(masterUser);
-        if (view !== 'LANDING') {
-           setView('DASHBOARD');
-        }
-      }
+      await applySession(session?.user ?? null);
     } catch (err) {
-      setUser(masterUser);
+      console.error('Falha ao ler a sessao:', err);
     } finally {
-      // Tempo mínimo para garantir que o DOM esteja pronto
-      setTimeout(() => setLoading(false), 300);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     checkSession();
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') void applySession(session?.user ?? null);
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -86,25 +74,10 @@ export default function App() {
     const pay = params.get('pay');
     if (pay && /^[a-z0-9-]{1,32}$/.test(pay)) {
       setPayProduct(pay);
-      setView(captureHandoff() ? 'BILLING' : 'DASHBOARD');
+      // link assinado do projeto (so billing); sem ele e sem sessao, pede login
+      setView(captureHandoff() ? 'BILLING' : 'ONBOARDING');
     }
   }, []);
-
-  const handleLogin = (email: string) => {
-    setUser({ ...masterUser, email, isAdmin: email === ADMIN_EMAIL });
-    setView('DASHBOARD');
-  };
-
-  const handleRegisterTrial = (name: string, email: string) => {
-    setUser({
-      ...masterUser,
-      name,
-      email,
-      isAdmin: email.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
-      subscriptionStatus: 'TRIALING',
-    });
-    setView('DASHBOARD');
-  };
 
   const handleCompleteQuiz = (data: BusinessQuizData) => {
     supabase.from('quiz_leads').insert({
@@ -117,22 +90,9 @@ export default function App() {
     }).then(({ error }) => {
       if (error) console.error('Falha ao salvar lead do quiz:', error.message);
     });
-
-    setUser({
-      ...masterUser,
-      name: data.contactName || data.businessName || masterUser.name,
-      email: data.contactEmail || masterUser.email,
-      phone: data.contactPhone || undefined,
-      isAdmin: data.contactEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
-      subscriptionStatus: 'TRIALING',
-    });
-    setView('DASHBOARD');
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    setView('LANDING');
-  };
+  const handleLogout = () => { void supabase.auth.signOut(); };
 
   if (loading) {
     return (
@@ -153,8 +113,6 @@ export default function App() {
         {view === 'LANDING' && <LandingPage onStart={() => setView('ONBOARDING')} />}
         {view === 'ONBOARDING' && (
           <OnboardingPage
-            onRegisterTrial={handleRegisterTrial}
-            onLogin={handleLogin}
             onCompleteQuiz={handleCompleteQuiz}
             onBack={() => setView('LANDING')}
           />
