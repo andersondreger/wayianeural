@@ -229,3 +229,25 @@ test('link assinado: valido, adulterado e expirado', () => {
   assert.equal(verifyHandoff(signHandoff('a@x.com', 'waysend', 'segredo', 1000, Date.now() - 5000), 'segredo'), null);
   assert.equal(signHandoff('a@x.com', 'waysend', ''), null);
 });
+
+test('buildOverview: produto novo aparece, cliente so ve o que tem, MRR ignora gratis', async () => {
+  const { buildOverview } = await import('./server.mjs');
+  const products = [
+    { slug: 'a', name: 'A', tier: 'paid', active: true, price_cents: 10000, cycle: 'MONTHLY', app_url: 'https://a', trial_days: 11 },
+    { slug: 'b', name: 'B', tier: 'free', active: true, price_cents: 5000, cycle: 'MONTHLY', app_url: 'https://b' },
+    { slug: 'novo', name: 'Novo', tier: 'paid', active: true, price_cents: 9000, cycle: 'MONTHLY', app_url: 'https://n' },
+  ];
+  const subs = [
+    { email: 'x@y.com', product_slug: 'a', status: 'ACTIVE', price_cents: 10000, cycle: 'MONTHLY', created_at: '2026-01-01T00:00:00Z' },
+    { email: 'x@y.com', product_slug: 'b', status: 'ACTIVE', price_cents: 5000, cycle: 'MONTHLY', created_at: '2026-02-01T00:00:00Z' },
+  ];
+  const o = buildOverview(products, subs, [{ product_slug: 'a', status: 'open' }]);
+  assert.equal(o.products.length, 3);
+  assert.equal(o.products.find((p) => p.slug === 'novo').counts.ACTIVE, 0);
+  assert.equal(o.products.find((p) => p.slug === 'a').mrrCents, 10000);
+  assert.equal(o.products.find((p) => p.slug === 'b').mrrCents, 0);
+  assert.equal(o.customers.length, 1);
+  assert.equal(o.customers[0].mrrCents, 10000);
+  assert.equal(o.customers[0].products.length, 2);
+  assert.equal(o.totals.openTickets, 1);
+});

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box } from 'lucide-react';
+import { Loader2, Crown, Users, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { payApi, brl, MyPayments, Hub, HubProject } from '../lib/pay';
 import { EmailGate, STATUS_LABEL } from './PaymentsPanel';
+import { CeoCenter, CeoSection } from './CeoCenter';
 
 const dt = (s?: string | null) => (s ? new Date(s).toLocaleDateString('pt-BR') : '—');
 const INV_LABEL: Record<string, string> = {
@@ -19,6 +20,13 @@ const NAV: { id: Section; label: string; icon: React.ElementType }[] = [
   { id: 'financeiro', label: 'Financeiro', icon: Wallet },
   { id: 'suporte', label: 'Suporte', icon: HelpCircle },
   { id: 'config', label: 'Configurações', icon: Settings },
+];
+
+const CEO_NAV: { id: CeoSection; label: string; icon: React.ElementType }[] = [
+  { id: 'geral', label: 'Visão geral', icon: Home },
+  { id: 'clientes', label: 'Clientes', icon: Users },
+  { id: 'financeiro', label: 'Financeiro', icon: Wallet },
+  { id: 'suporte', label: 'Suporte', icon: HelpCircle },
 ];
 
 const BADGE: Record<HubProject['state'], { label: string; cls: string }> = {
@@ -46,11 +54,15 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const [doc, setDoc] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [ceo, setCeo] = useState(false);
+  const [ceoSection, setCeoSection] = useState<CeoSection>('geral');
 
   const load = useCallback(async () => {
     try {
       const h = await payApi.hub();          // login completo OU link assinado do projeto
       setHub(h);
+      if (!h.scoped) payApi.me().then(m => setIsAdmin(m.isAdmin)).catch(() => {});   // visao CEO so para admin (o servidor valida de novo)
       setData(h.scoped ? null : await payApi.myPayments());   // faturas/LGPD so com login completo
       setErr(''); setState('ready');
     } catch (e: any) {
@@ -186,12 +198,19 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   ];
 
   return (
+    <div className="space-y-4">
+    {isAdmin && (
+      <div className="inline-flex rounded-full bg-white/10 p-1 text-sm font-bold">
+        <button onClick={() => setCeo(false)} className={`px-5 py-2 rounded-full ${!ceo ? 'bg-white text-[#1c0b3d]' : 'text-white/70'}`}>Visão do cliente</button>
+        <button onClick={() => setCeo(true)} className={`px-5 py-2 rounded-full inline-flex items-center gap-2 ${ceo ? 'bg-white text-[#1c0b3d]' : 'text-white/70'}`}><Crown size={14} /> Visão CEO</button>
+      </div>
+    )}
     <div className="rounded-[2rem] overflow-hidden bg-[#1c0b3d] grid md:grid-cols-[230px_1fr] min-h-[640px] text-white">
       <aside className="bg-white text-[#1c0b3d] p-4 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
         <div className="hidden md:block text-3xl font-black text-[#6d28d9] px-3 py-4">WayIA</div>
-        {NAV.map(n => (
-          <button key={n.id} onClick={() => setSection(n.id)}
-            className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-left transition-colors ${section === n.id ? 'bg-[#ede9fe] text-[#4c1d95]' : 'text-slate-600 hover:bg-slate-50'}`}>
+        {(ceo ? CEO_NAV : NAV).map(n => (
+          <button key={n.id} onClick={() => ceo ? setCeoSection(n.id as CeoSection) : setSection(n.id as Section)}
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-left transition-colors ${(ceo ? ceoSection : section) === n.id ? 'bg-[#ede9fe] text-[#4c1d95]' : 'text-slate-600 hover:bg-slate-50'}`}>
             <n.icon size={18} /> {n.label}
           </button>
         ))}
@@ -203,6 +222,9 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
 
       <main className="p-5 md:p-8 min-w-0 space-y-6">
         {err && <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>}
+
+        {ceo && isAdmin && <CeoCenter section={ceoSection} />}
+        {!ceo && <>
 
         {section === 'inicio' && (
           <div className="grid xl:grid-cols-[1fr_340px] gap-6">
@@ -312,7 +334,9 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
             </div>
           </div>
         )}
+        </>}
       </main>
+    </div>
     </div>
   );
 }

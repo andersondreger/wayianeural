@@ -92,6 +92,8 @@ export const payApi = {
   adminTickets: (status?: PayTicket['status']) => call<PayTicket[]>(`/admin/tickets${status ? `?status=${status}` : ''}`),
   adminReplyTicket: (id: string, body: { reply?: string; status?: PayTicket['status'] }) =>
     call<PayTicket & { whatsapp?: 'sent' | 'failed' | 'skipped' }>(`/admin/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify(body) }),
+  adminOverview: () => call<Overview>('/admin/overview'),
+  adminCreateProduct: (b: NewProduct) => call<PayProduct>('/admin/products', { method: 'POST', body: JSON.stringify(b) }),
   adminProducts: () => call<PayProduct[]>('/admin/products'),
   adminUpdateProduct: (slug: string, patch: { price_cents?: number; active?: boolean }) =>
     call<PayProduct>(`/admin/products/${slug}`, { method: 'PUT', body: JSON.stringify(patch) }),
@@ -133,3 +135,23 @@ export interface HubProject {
   daysLeft: number | null; trialEndsAt: string | null; currentPeriodEnd: string | null;
 }
 export interface Hub { email: string; scoped: boolean; projects: HubProject[] }
+
+export type AccessState = HubProject['state'];
+export interface OverviewProduct {
+  slug: string; name: string; tier: 'free' | 'paid'; active: boolean; price_cents: number; cycle: 'MONTHLY' | 'YEARLY';
+  app_url: string; checkout_url: string | null; trial_days: number;
+  counts: Record<AccessState, number>; mrrCents: number; openTickets: number;
+}
+export interface OverviewCustomer {
+  email: string; mrrCents: number; since: string;
+  products: { slug: string; state: AccessState; access: HubProject['access']; daysLeft: number | null; priceCents: number }[];
+}
+export interface Overview {
+  products: OverviewProduct[]; customers: OverviewCustomer[];
+  totals: { products: number; customers: number; openTickets: number; trials: number };
+  gatewayMode: string; generatedAt: string;
+}
+export interface NewProduct {
+  slug: string; name: string; description?: string; price_cents: number; app_url: string;
+  cycle?: 'MONTHLY' | 'YEARLY'; tier?: 'free' | 'paid'; trial_days?: number;
+}

@@ -105,6 +105,41 @@ export function buildHub(products, subs, now = new Date()) {
   }));
 }
 
+// Visao CEO: um bloco por produto do catalogo (produto novo aparece sozinho) + clientes agregados por e-mail.
+export function buildOverview(products, subs, tickets = [], now = new Date()) {
+  const prodBy = new Map(products.map((p) => [p.slug, p]));
+  const mrrOf = (s) => (s.cycle === 'YEARLY' ? Math.round(s.price_cents / 12) : s.price_cents);
+  const blocks = new Map(products.map((p) => [p.slug, {
+    slug: p.slug, name: p.name, tier: p.tier ?? 'paid', active: p.active, price_cents: p.price_cents, cycle: p.cycle,
+    app_url: p.app_url, checkout_url: p.checkout_url ?? null, trial_days: p.trial_days ?? 0,
+    counts: { FREE: 0, TRIAL: 0, ACTIVE: 0, GRACE: 0, EXPIRED: 0, NONE: 0 }, mrrCents: 0, openTickets: 0,
+  }]));
+  const customers = new Map();
+  for (const s of subs) {
+    const p = prodBy.get(s.product_slug), b = blocks.get(s.product_slug);
+    if (!p || !b) continue;
+    const st = accessState(s, p, now);
+    b.counts[st.state] = (b.counts[st.state] ?? 0) + 1;
+    const mrr = s.status === 'ACTIVE' && p.tier !== 'free' ? mrrOf(s) : 0;
+    b.mrrCents += mrr;
+    const c = customers.get(s.email) ?? { email: s.email, mrrCents: 0, since: s.created_at, products: [] };
+    c.mrrCents += mrr;
+    if (s.created_at < c.since) c.since = s.created_at;
+    c.products.push({ slug: s.product_slug, state: st.state, access: st.access, daysLeft: st.daysLeft ?? null, priceCents: s.price_cents });
+    customers.set(s.email, c);
+  }
+  for (const t of tickets) if (t.status === 'open' && blocks.get(t.product_slug)) blocks.get(t.product_slug).openTickets++;
+  return {
+    products: [...blocks.values()],
+    customers: [...customers.values()].sort((a, b) => b.mrrCents - a.mrrCents || a.email.localeCompare(b.email)),
+    totals: {
+      products: blocks.size, customers: customers.size,
+      openTickets: tickets.filter((t) => t.status === 'open').length,
+      trials: [...blocks.values()].reduce((a, b) => a + b.counts.TRIAL, 0),
+    },
+  };
+}
+
 // Link assinado projeto -> Financeiro: escopo unico (um e-mail, um produto), so billing, expira.
 const b64u = (b) => Buffer.from(b).toString('base64url');
 export function signHandoff(email, product, secret = HANDOFF_SECRET, ttlMs = 2 * 3_600_000, now = Date.now()) {
@@ -646,6 +681,48 @@ const routes = {
     return sb(`pay_tickets?select=*&order=created_at.desc&limit=200${filter}`);
   },
 
+  // Central CEO: todos os produtos do catalogo, clientes e o que cada um acessa.
+  'GET /admin/overview': async (req) => {
+    await adminFromJwt(req);
+    const trial = await hasTrialSchema();
+    const [products, subs, tickets] = await Promise.all([
+      sb('pay_products?order=sort.asc'),
+      sb(`pay_subscriptions?select=email,product_slug,status,price_cents,cycle,created_at,current_period_end,${trial ? 'trial_ends_at,' : ''}claimed_ref&limit=5000`),
+      sb('pay_tickets?select=product_slug,status&limit=2000').catch(() => []),
+    ]);
+    return { ...buildOverview(products, subs, tickets), gatewayMode: ASAAS_BASE.includes('sandbox') ? 'sandbox' : 'producao', generatedAt: new Date().toISOString() };
+  },
+
+  // Cadastrar produto novo no ecossistema (sem deploy): ele passa a aparecer no hub dos clientes e na Central CEO.
+  'POST /admin/products': async (req) => {
+    await adminFromJwt(req);
+    const b = await readJson(req);
+    const slug = clip(b.slug, 40).toLowerCase();
+    if (!SLUG_RE.test(slug)) throw new HttpError(400, 'slug invalido (a-z, 0-9, hifen)');
+    const name = clip(b.name, 60);
+    if (!name) throw new HttpError(400, 'nome obrigatorio');
+    const price = Number(b.price_cents);
+    if (!Number.isInteger(price) || price < 100 || price > 10_000_000) throw new HttpError(400, 'preco invalido');
+    let appUrl;
+    try { appUrl = new URL(String(b.app_url)); if (appUrl.protocol !== 'https:') throw 0; } catch { throw new HttpError(400, 'app_url precisa ser https'); }
+    const row = {
+      slug, name, description: clip(b.description, 400) || null, price_cents: price, app_url: appUrl.href,
+      cycle: b.cycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY', active: true,
+    };
+    if (await hasTrialSchema()) {
+      row.tier = b.tier === 'free' ? 'free' : 'paid';
+      const td = Number(b.trial_days ?? 11);
+      row.trial_days = Number.isInteger(td) && td >= 0 && td <= 90 ? td : 11;
+    }
+    const [{ sort } = { sort: 0 }] = await sb('pay_products?select=sort&order=sort.desc&limit=1');
+    row.sort = (sort ?? 0) + 1;
+    const rows = await sb('pay_products', { method: 'POST', prefer: 'return=representation', body: row }).catch((e) => {
+      if (/duplicate|23505|already exists/i.test(e.message)) throw new HttpError(409, 'ja existe um produto com esse slug');
+      throw e;
+    });
+    return rows[0];
+  },
+
   'GET /admin/products': async (req) => { await adminFromJwt(req); return sb('pay_products?order=sort.asc'); },
 };
 
@@ -660,6 +737,9 @@ const updateProduct = async (req, slug) => {
   }
   if (typeof b.active === 'boolean') patch.active = b.active;
   if (typeof b.description === 'string') patch.description = b.description.slice(0, 400);
+  if (typeof b.name === 'string' && b.name.trim()) patch.name = b.name.trim().slice(0, 60);
+  if (['free', 'paid'].includes(b.tier) && (await hasTrialSchema())) patch.tier = b.tier;
+  if (Number.isInteger(b.trial_days) && b.trial_days >= 0 && b.trial_days <= 90 && (await hasTrialSchema())) patch.trial_days = b.trial_days;
   const rows = await sb(`pay_products?slug=eq.${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch, prefer: 'return=representation' });
   if (!rows?.length) throw new HttpError(404, 'produto nao encontrado');
   return rows[0];
