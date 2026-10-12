@@ -16,6 +16,7 @@ export interface UserSession {
   email: string;
   name: string;
   phone?: string;
+  avatar?: string;
   isAdmin: boolean;
   isAffiliate?: boolean;
   trialStart: number;

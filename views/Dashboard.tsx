@@ -57,10 +57,13 @@ const evoFetch = async (url: string, init: RequestInit = {}) => {
 const AR_PROXY_URL = 'https://wayianeural-ar-proxy.dreger-anderson.workers.dev';
 
 export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProduct }: DashboardProps) {
-  const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab ?? 'overview');
-  // quem e admin de pagamentos e decidido pelo servidor (ADMIN_EMAILS), nunca pelo front
+  // Admin (ADMIN_EMAILS no servidor) ve tudo. Os demais logins ficam sem Instancias, Atendimento, RA/WayAR e Financeiro.
+  // O servidor tambem barra: o proxy /evo/ so aceita o admin. Esconder aqui e so a parte visual.
   const [isPayAdmin, setIsPayAdmin] = useState(false);
   useEffect(() => { payApi.me().then(m => setIsPayAdmin(m.isAdmin)).catch(() => {}); }, []);
+  const [rawTab, setActiveTab] = useState<DashboardTab>(initialTab ?? 'overview');
+  const ADMIN_ONLY_TABS: DashboardTab[] = ['atendimento', 'instancias', 'ar', 'financeiro', 'admin_pay'];
+  const activeTab: DashboardTab = !isPayAdmin && ADMIN_ONLY_TABS.includes(rawTab) ? 'overview' : rawTab;
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
   const [instances, setInstances] = useState<any[]>([]);
@@ -361,10 +364,11 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
   };
 
   useEffect(() => {
+    if (!isPayAdmin) return;
     fetchInstances();
     const timer = setInterval(fetchInstances, 20000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isPayAdmin]);
 
   useEffect(() => {
     if (activeTab === 'ar') fetchArExperiences();
@@ -384,9 +388,11 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
 
   const navItems = [
     { id: 'overview', label: 'Home', icon: Home },
-    { id: 'atendimento', label: 'Atendimento', icon: MessageSquare },
-    { id: 'instancias', label: 'Instâncias', icon: Server },
-    { id: 'ar', label: 'RA / WayAR', icon: Scan },
+    ...(isPayAdmin ? [
+      { id: 'atendimento', label: 'Atendimento', icon: MessageSquare },
+      { id: 'instancias', label: 'Instâncias', icon: Server },
+      { id: 'ar', label: 'RA / WayAR', icon: Scan },
+    ] : []),
     { id: 'agentes', label: 'Agentes IA', icon: Bot },
     { id: 'pagamentos', label: 'Meu Financeiro', icon: Crown },
     ...(isPayAdmin ? [{ id: 'financeiro', label: 'Financeiro', icon: Activity }, { id: 'admin_pay', label: 'Admin Pagamentos', icon: ShieldCheck }] : []),
@@ -443,7 +449,9 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
               </div>
             )}
             <button className="text-gray-500 hover:text-orange-500 transition-colors"><Bell size={18} /></button>
-            <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>
+            {user.avatar
+              ? <img src={user.avatar} alt={user.name} className="h-10 w-10 rounded-full object-cover border border-orange-500/20 shadow-lg" />
+              : <div className="h-10 w-10 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 font-black text-xs shadow-lg">{user.name[0]}</div>}
           </div>
         </header>
 

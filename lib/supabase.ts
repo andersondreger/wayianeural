@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Chaves do projeto (Mantidas para compatibilidade de tipos)
 const SUPABASE_URL_DIRECT = "https://dteagxhnuhejefvguxfw.supabase.co";
+export const SUPABASE_URL = SUPABASE_URL_DIRECT;
 const SUPABASE_KEY_DIRECT = "sb_publishable__BixLP2pIalzCB9buumQZg_IkFBXpOR";
 
 // IMPORTANTE: Forçamos TRUE para garantir que o Dashboard Real seja carregado

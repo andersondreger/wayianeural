@@ -92,6 +92,7 @@ export const payApi = {
   adminTickets: (status?: PayTicket['status']) => call<PayTicket[]>(`/admin/tickets${status ? `?status=${status}` : ''}`),
   adminReplyTicket: (id: string, body: { reply?: string; status?: PayTicket['status'] }) =>
     call<PayTicket & { whatsapp?: 'sent' | 'failed' | 'skipped' }>(`/admin/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify(body) }),
+  uploadAvatar: (image: string) => call<{ url: string }>('/me/avatar', { method: 'POST', body: JSON.stringify({ image }) }),
   adminOverview: () => call<Overview>('/admin/overview'),
   adminCreateProduct: (b: NewProduct) => call<PayProduct>('/admin/products', { method: 'POST', body: JSON.stringify(b) }),
   adminProducts: () => call<PayProduct[]>('/admin/products'),

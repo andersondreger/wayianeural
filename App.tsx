@@ -12,13 +12,14 @@ import { BusinessQuizData } from './components/BusinessQuiz';
 import { ViewState, UserSession } from './types';
 import { AccountPanel } from './components/AccountPanel';
 import { captureHandoff, payApi } from './lib/pay';
+import { safeAvatarUrl } from './lib/avatar';
 
 // Sessao REAL do Supabase (codigo por e-mail). Sem sessao nao existe usuario: nada de conta mestre/fallback.
 // isAdmin vem do servidor (payments-api confere o JWT contra ADMIN_EMAILS), nunca de um e-mail fixo no front.
 const toSession = (u: { email?: string; user_metadata?: Record<string, any> }, isAdmin: boolean): UserSession => {
   const email = u.email || '';
   const name = String(u.user_metadata?.full_name || email.split('@')[0] || 'Cliente').trim() || 'Cliente';
-  return { email, name, phone: u.user_metadata?.phone || undefined, isAdmin, trialStart: Date.now(), subscriptionStatus: 'ACTIVE' };
+  return { email, name, phone: u.user_metadata?.phone || undefined, avatar: safeAvatarUrl(u.user_metadata?.avatar_url) || undefined, isAdmin, trialStart: Date.now(), subscriptionStatus: 'ACTIVE' };
 };
 
 export default function App() {

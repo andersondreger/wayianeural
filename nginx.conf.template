@@ -81,12 +81,13 @@ server {
     return 403;
   }
 
+  # Evolution (instancias, contatos) e SO do admin: o payments-api confere o JWT contra ADMIN_EMAILS.
+  # Qualquer outro login valido recebe 403. Esconder o menu na tela nao protege; isto protege.
   location = /_auth/session {
     internal;
-    proxy_pass https://dteagxhnuhejefvguxfw.supabase.co/auth/v1/user;
-    proxy_ssl_server_name on;
-    proxy_set_header Host dteagxhnuhejefvguxfw.supabase.co;
-    proxy_set_header apikey "${SUPABASE_PUBLISHABLE_KEY}";
+    resolver 127.0.0.11 valid=10s;
+    set $admin_upstream http://payments-api:3000/auth/admin;
+    proxy_pass $admin_upstream;
     proxy_set_header Authorization $http_authorization;
     proxy_pass_request_body off;
     proxy_set_header Content-Length "";

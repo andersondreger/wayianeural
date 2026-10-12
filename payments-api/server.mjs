@@ -2,7 +2,7 @@
 // Gateway: Asaas (o mesmo do WayAR). Banco/auth: Supabase do wayianeural.
 // Segredos so por variavel de ambiente (.env da VPS), nunca no navegador.
 import http from 'node:http';
-import { timingSafeEqual, createHmac } from 'node:crypto';
+import { timingSafeEqual, createHmac, createHash } from 'node:crypto';
 
 const env = (k, d = '') => process.env[k] ?? d;
 const PORT = Number(env('PORT', '3000'));
@@ -138,6 +138,15 @@ export function buildOverview(products, subs, tickets = [], now = new Date()) {
       trials: [...blocks.values()].reduce((a, b) => a + b.counts.TRIAL, 0),
     },
   };
+}
+
+// Foto de perfil: o navegador manda um JPEG pequeno (data URL); validamos tipo/tamanho antes de guardar.
+export function parseAvatar(image, maxBytes = 44 * 1024) {
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(image ?? ''));
+  if (!m) return null;
+  const buf = Buffer.from(m[1], 'base64');
+  if (buf.length < 200 || buf.length > maxBytes || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  return buf;
 }
 
 // Link assinado projeto -> Financeiro: escopo unico (um e-mail, um produto), so billing, expira.
@@ -449,6 +458,29 @@ const routes = {
   },
 
   // Cancela a renovacao no gateway. Somente assinaturas deste cliente e geridas aqui (central).
+  // Foto do perfil (Supabase Storage, bucket publico "avatars"). Um arquivo por e-mail; devolve a URL publica.
+  'POST /me/avatar': async (req) => {
+    const u = await userFromJwt(req);
+    if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
+    const buf = parseAvatar((await readJson(req)).image);
+    if (!buf) throw new HttpError(400, 'imagem invalida (JPEG de ate 44 KB)');
+    const name = `${createHash('sha256').update(u.email).digest('hex').slice(0, 40)}.jpg`;
+    const put = () => fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${name}`, {
+      method: 'POST', body: buf, signal: AbortSignal.timeout(15000),
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
+    });
+    let res = await put();
+    if (!res.ok) {   // 1o uso: cria o bucket publico e tenta de novo
+      await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
+        method: 'POST', headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'avatars', name: 'avatars', public: true, file_size_limit: 65536, allowed_mime_types: ['image/jpeg'] }),
+      }).catch(() => {});
+      res = await put();
+    }
+    if (!res.ok) throw new HttpError(502, 'nao foi possivel salvar a foto');
+    return { url: `${SUPABASE_URL}/storage/v1/object/public/avatars/${name}?v=${Date.now()}` };
+  },
+
   'POST /me/cancel': async (req) => {
     const u = await userFromJwt(req);
     if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
@@ -680,6 +712,9 @@ const routes = {
     const filter = status && ['open', 'answered', 'closed'].includes(status) ? `&status=eq.${status}` : '';
     return sb(`pay_tickets?select=*&order=created_at.desc&limit=200${filter}`);
   },
+
+  // Usado pelo nginx (auth_request) antes de liberar o proxy da Evolution: so o admin passa (200); outros 401/403.
+  'GET /auth/admin': async (req) => { await adminFromJwt(req); return { ok: true }; },
 
   // Central CEO: todos os produtos do catalogo, clientes e o que cada um acessa.
   'GET /admin/overview': async (req) => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { eventToStatus, isEntitled, buildFinance, claimDecision, parseIngestSubscription, parseIngestTicket, normalizePhone, ticketAlertText, ticketReplyText, sendWhatsApp, buildInvoices, slimEvent, serviceTokenOk, makeRateLimiter, parseProductTokens, accessState, buildHub, signHandoff, verifyHandoff, server } from './server.mjs';
+import { eventToStatus, isEntitled, buildFinance, claimDecision, parseIngestSubscription, parseIngestTicket, normalizePhone, ticketAlertText, ticketReplyText, sendWhatsApp, buildInvoices, slimEvent, serviceTokenOk, makeRateLimiter, parseProductTokens, accessState, buildHub, signHandoff, verifyHandoff, parseAvatar, server } from './server.mjs';
 
 test('eventos do Asaas mapeiam para o status certo', () => {
   assert.equal(eventToStatus('PAYMENT_RECEIVED'), 'ACTIVE');
@@ -250,4 +250,14 @@ test('buildOverview: produto novo aparece, cliente so ve o que tem, MRR ignora g
   assert.equal(o.customers[0].mrrCents, 10000);
   assert.equal(o.customers[0].products.length, 2);
   assert.equal(o.totals.openTickets, 1);
+});
+
+test('parseAvatar aceita so JPEG pequeno e valido', () => {
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(500, 1)]);
+  const ok = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+  assert.ok(parseAvatar(ok));
+  assert.equal(parseAvatar(`data:image/png;base64,${jpeg.toString('base64')}`), null);
+  assert.equal(parseAvatar(`data:image/jpeg;base64,${Buffer.alloc(500, 1).toString('base64')}`), null);   // sem cabecalho JPEG
+  assert.equal(parseAvatar(`data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(60 * 1024)]).toString('base64')}`), null);   // grande demais
+  assert.equal(parseAvatar(undefined), null);
 });

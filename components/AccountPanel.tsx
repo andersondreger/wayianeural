@@ -4,6 +4,7 @@ import { Loader2, Crown, ChevronRight, Play, Users, ExternalLink, Download, Tras
 import { supabase } from '../lib/supabase';
 import { payApi, brl, MyPayments, Hub, HubProject } from '../lib/pay';
 import { STATUS_LABEL } from './PaymentsPanel';
+import { resizeToJpeg, safeAvatarUrl } from '../lib/avatar';
 import { CeoCenter, CeoSection } from './CeoCenter';
 import { DEMO_HUB, DEMO_PAYMENTS, NEWS } from '../lib/demo';
 
@@ -63,7 +64,8 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [profile, setProfile] = useState<{ name: string; phone: string }>({ name: '', phone: '' });
+  const [profile, setProfile] = useState<{ name: string; phone: string; avatar: string }>({ name: '', phone: '', avatar: '' });
+  const [menuOpen, setMenuOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [spot, setSpot] = useState(0);   // produto em destaque (efeito Netflix)
   const [demo, setDemo] = useState(false);   // /dashboard sem login: painel com dados de exemplo
@@ -76,7 +78,7 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
       setHub(h);
       supabase.auth.getUser().then(({ data }) => {
         const m = data.user?.user_metadata ?? {};
-        setProfile({ name: String(m.full_name ?? ''), phone: String(m.phone ?? '') });
+        setProfile({ name: String(m.full_name ?? ''), phone: String(m.phone ?? ''), avatar: safeAvatarUrl(m.avatar_url) });
       }).catch(() => {});
       if (!h.scoped) payApi.me().then(m => setIsAdmin(m.isAdmin)).catch(() => {});   // visao CEO so para admin (o servidor valida de novo)
       setData(h.scoped ? null : await payApi.myPayments());   // faturas/LGPD so com login completo
@@ -97,6 +99,13 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
     return () => clearInterval(t);
   }, [nProjects]);
 
+  const changePhoto = (file?: File) => file && run('photo', async () => {
+    const { url } = await payApi.uploadAvatar(await resizeToJpeg(file));
+    const { error } = await supabase.auth.updateUser({ data: { avatar_url: url } });
+    if (error) throw new Error('Não foi possível salvar a foto.');
+    setProfile(p => ({ ...p, avatar: url }));
+  });
+  const signOut = async () => { await supabase.auth.signOut(); window.location.href = '/'; };
   const loginUrl = `/app/?start=onboarding${selected ? `&pay=${encodeURIComponent(selected)}` : ''}`;
   const run = async (key: string, fn: () => Promise<void>) => {
     if (demo) { window.location.href = loginUrl; return; }
@@ -321,16 +330,39 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
           </button>
         ))}
         {!ceo && !demo && (
-          <a href="/app/?go=neural" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-slate-600 hover:bg-slate-50"><Box size={18} /> WayFlow Neural</a>
+          <a href="/app/?go=neural" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold whitespace-nowrap text-slate-600 hover:bg-slate-50"><Box size={18} /> {isAdmin ? 'Instâncias e WayAR' : 'WayFlow Neural'}</a>
         )}
         <div className="hidden md:flex mt-auto items-center gap-3 rounded-2xl bg-[#f5f3ff] p-3">
-          <span className="w-10 h-10 rounded-full bg-[#6d28d9] text-white grid place-items-center font-black text-sm">{nome.slice(0, 2).toUpperCase()}</span>
+          {profile.avatar
+            ? <img src={profile.avatar} alt={nome} className="w-10 h-10 rounded-full object-cover" />
+            : <span className="w-10 h-10 rounded-full bg-[#6d28d9] text-white grid place-items-center font-black text-sm">{nome.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0"><p className="font-bold text-sm truncate">{nome}</p><p className="text-xs text-slate-500 truncate">{email}</p></div>
         </div>
-        {!demo && <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="hidden md:block text-xs font-bold text-slate-500 hover:text-[#6d28d9] px-4 py-2 text-left">Sair</button>}
+        {!demo && <button onClick={signOut} className="hidden md:block text-xs font-bold text-slate-500 hover:text-[#6d28d9] px-4 py-2 text-left">Sair</button>}
       </aside>
 
       <main className="p-5 md:p-8 min-w-0 space-y-6">
+        {!demo && (
+          <div className="relative flex justify-end -mb-2">
+            <button onClick={() => setMenuOpen(o => !o)} aria-haspopup="menu" aria-expanded={menuOpen} className="flex items-center gap-3 rounded-full bg-white/10 hover:bg-white/20 pl-4 pr-1.5 py-1.5">
+              <span className="text-sm font-bold max-w-[160px] truncate">{nome}</span>
+              {profile.avatar
+                ? <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+                : <span className="w-9 h-9 rounded-full bg-[#6d28d9] grid place-items-center font-black text-xs">{nome.slice(0, 2).toUpperCase()}</span>}
+            </button>
+            {menuOpen && (
+              <div role="menu" className="absolute right-0 top-12 z-30 w-60 rounded-2xl bg-white text-[#1c0b3d] shadow-2xl p-2 text-sm font-bold">
+                <p className="px-3 pt-2 pb-1 text-xs font-medium text-slate-500 truncate">{email}</p>
+                {[
+                  { label: 'Meu perfil e foto', go: () => { setCeo(false); setSection('config'); } },
+                  { label: 'Gerir assinaturas e faturas', go: () => { setCeo(false); setSection('financeiro'); } },
+                  { label: 'Suporte', go: () => { setCeo(false); setSection('suporte'); } },
+                ].map(i => <button key={i.label} role="menuitem" onClick={() => { i.go(); setMenuOpen(false); }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-50">{i.label}</button>)}
+                <button role="menuitem" onClick={signOut} className="w-full text-left px-3 py-2.5 rounded-xl text-red-600 hover:bg-red-50 border-t border-slate-100 mt-1">Sair</button>
+              </div>
+            )}
+          </div>
+        )}
         {err && <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>}
 
         {ceo && isAdmin && <CeoCenter section={ceoSection} demo={demo} />}
@@ -428,6 +460,18 @@ export function AccountPanel({ initialProduct }: { initialProduct?: string }) {
             <h2 className="text-3xl font-black">Configurações</h2>
             <div className={`${card} p-6 space-y-4`}>
               <h3 className="font-extrabold text-lg">Meu perfil</h3>
+              <div className="flex items-center gap-4">
+                {profile.avatar
+                  ? <img src={profile.avatar} alt={nome} className="w-20 h-20 rounded-full object-cover" />
+                  : <span className="w-20 h-20 rounded-full bg-[#6d28d9] text-white grid place-items-center font-black text-2xl">{nome.slice(0, 2).toUpperCase()}</span>}
+                <div className="space-y-1">
+                  <label className={`${ghost} cursor-pointer ${busy === 'photo' ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {busy === 'photo' ? 'Enviando...' : 'Trocar foto'}
+                    <input type="file" accept="image/*" className="hidden" onChange={e => { changePhoto(e.target.files?.[0]); e.target.value = ''; }} />
+                  </label>
+                  <p className="text-xs text-slate-500">JPG ou PNG. A foto é recortada em quadrado.</p>
+                </div>
+              </div>
               <label className="block text-xs font-bold text-slate-500">E-mail (usado no login)
                 <input className={`${field} mt-1 bg-slate-50`} value={email} disabled />
               </label>
