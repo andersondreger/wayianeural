@@ -80,8 +80,23 @@ export function CeoCenter({ section, demo }: { section: CeoSection; demo?: boole
   const [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState('');
+  const [price, setPrice] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState('');
   const load = () => demo ? setO(DEMO_OVERVIEW) : payApi.adminOverview().then(setO).catch(e => setErr(e.message));
   useEffect(() => { load(); }, []);
+
+  // Preco novo vale so para novas contratacoes (quem ja assina mantem o valor). Pausar tira o produto do dashboard dos clientes.
+  const adjust = async (slug: string, patch: { price_cents?: number; active?: boolean }, confirmText?: string) => {
+    if (demo) { setMsg('Demonstrativo: entre com sua conta de admin para alterar preços e vendas.'); return; }
+    if (confirmText && !window.confirm(confirmText)) return;
+    try { await payApi.adminUpdateProduct(slug, patch); setMsg('Salvo.'); setPrice(p => ({ ...p, [slug]: '' })); await load(); }
+    catch (e) { setMsg((e as Error).message); }
+  };
+  const savePrice = (slug: string) => {
+    const reais = Number((price[slug] ?? '').replace(',', '.'));
+    if (!Number.isFinite(reais) || reais < 1) { setMsg('Preço inválido.'); return; }
+    void adjust(slug, { price_cents: Math.round(reais * 100) });
+  };
 
   const names = useMemo(() => Object.fromEntries((o?.products ?? []).map(p => [p.slug, p.name])), [o]);
 
@@ -140,6 +155,14 @@ export function CeoCenter({ section, demo }: { section: CeoSection; demo?: boole
         {(Object.keys(p.counts) as AccessState[]).filter(s => p.counts[s] > 0 && s !== 'NONE').map(s => <span key={s} className="flex items-center gap-1"><Badge state={s} /><b className="text-sm">{p.counts[s]}</b></span>)}
         {Object.values(p.counts).every(n => n === 0) && <span className="text-xs text-slate-500">Nenhum cliente ainda</span>}
       </div>
+      <div className="border-t border-slate-100 pt-3 space-y-2">
+        <div className="flex gap-2">
+          <input className={`${field} !py-2 !px-3`} placeholder="Novo preço (R$)" inputMode="decimal" value={price[p.slug] ?? ''} onChange={e => setPrice({ ...price, [p.slug]: e.target.value })} />
+          <button onClick={() => savePrice(p.slug)} disabled={!price[p.slug]} className="px-4 rounded-xl bg-[#ede9fe] text-[#4c1d95] text-sm font-bold disabled:opacity-40">Salvar</button>
+        </div>
+        <button onClick={() => adjust(p.slug, { active: !p.active }, p.active ? `Pausar as vendas de ${p.name}? O produto some do dashboard dos clientes.` : undefined)}
+          className={`text-xs font-bold ${p.active ? 'text-slate-500 hover:text-red-600' : 'text-emerald-700'}`}>{p.active ? 'Pausar vendas' : 'Vendas pausadas · Reabrir'}</button>
+      </div>
       <div className="mt-auto flex items-center justify-between pt-1">
         {p.openTickets > 0 ? <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-800">{p.openTickets} chamado(s)</span> : <span />}
         <a href={p.app_url} target="_blank" rel="noreferrer" className="text-[#6d28d9] font-bold text-sm inline-flex items-center gap-1.5 hover:underline">Abrir <ExternalLink size={14} /></a>
@@ -168,8 +191,9 @@ export function CeoCenter({ section, demo }: { section: CeoSection; demo?: boole
       </div>
 
       <h3 className="text-xl font-extrabold">Produtos ({o.products.length})</h3>
+      {msg && <div role="status" className="rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold">{msg}</div>}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{o.products.map(productCard)}</div>
-      {pipeline.length > 0 && <p className="text-xs text-white/50">Em desenvolvimento (fora do catálogo): {pipeline.map(p => p.name).join(' · ')}. Use "Novo produto" quando forem para a venda.</p>}
+      {pipeline.length > 0 && <p className="text-xs text-white/50">Preço novo vale só para novas contratações; quem já assina mantém o valor. Em desenvolvimento (fora do catálogo): {pipeline.map(p => p.name).join(' · ')}. Use "Novo produto" quando forem para a venda.</p>}
       <p className="text-xs text-white/40">Atualizado {new Date(o.generatedAt).toLocaleString('pt-BR')}</p>
     </div>
   );

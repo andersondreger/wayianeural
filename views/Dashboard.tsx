@@ -18,7 +18,6 @@ import {
 import { UserSession, DashboardTab, EvolutionInstance } from '../types';
 import { Logo } from '../components/Logo';
 import { products } from '../data/products';
-import { AdminPaymentsPanel } from '../components/PaymentsPanel';
 import { payApi } from '../lib/pay';
 import { FinanceDashboard } from '../components/FinanceDashboard';
 import { AccountPanel } from '../components/AccountPanel';
@@ -62,7 +61,7 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
   const [isPayAdmin, setIsPayAdmin] = useState(false);
   useEffect(() => { payApi.me().then(m => setIsPayAdmin(m.isAdmin)).catch(() => {}); }, []);
   const [rawTab, setActiveTab] = useState<DashboardTab>(initialTab ?? 'overview');
-  const ADMIN_ONLY_TABS: DashboardTab[] = ['atendimento', 'instancias', 'ar', 'financeiro', 'admin_pay'];
+  const ADMIN_ONLY_TABS: DashboardTab[] = ['atendimento', 'instancias', 'ar', 'financeiro'];
   const activeTab: DashboardTab = !isPayAdmin && ADMIN_ONLY_TABS.includes(rawTab) ? 'overview' : rawTab;
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
@@ -395,7 +394,7 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
     ] : []),
     { id: 'agentes', label: 'Agentes IA', icon: Bot },
     { id: 'pagamentos', label: 'Meu Financeiro', icon: Crown },
-    ...(isPayAdmin ? [{ id: 'financeiro', label: 'Financeiro', icon: Activity }, { id: 'admin_pay', label: 'Admin Pagamentos', icon: ShieldCheck }] : []),
+    ...(isPayAdmin ? [{ id: 'financeiro', label: 'Financeiro', icon: Activity }] : []),
     { id: 'settings', label: 'Ajustes', icon: Settings2 },
   ];
 
@@ -746,10 +745,6 @@ export function Dashboard({ user, onLogout, onCheckout, initialTab, initialProdu
              ) : activeTab === 'financeiro' && isPayAdmin ? (
                 <motion.div key="financeiro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
                   <FinanceDashboard />
-                </motion.div>
-             ) : activeTab === 'admin_pay' && isPayAdmin ? (
-                <motion.div key="admin_pay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-10 overflow-y-auto h-full">
-                  <AdminPaymentsPanel />
                 </motion.div>
              ) : activeTab === 'settings' ? (
                 <motion.div key="settings" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 p-12 overflow-y-auto custom-scrollbar">
