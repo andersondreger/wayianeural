@@ -123,12 +123,20 @@ export default function App() {
           </div>
         )}
         {view === 'DASHBOARD' && user && (
-          <Dashboard
-            user={user}
-            onLogout={handleLogout}
-            initialTab={payProduct ? 'pagamentos' : startTab}
-            initialProduct={payProduct}
-          />
+          // /app logado: dashboard estilo Netflix (produtos, financeiro, suporte, Visao CEO). O painel antigo
+          // (atendimento, instancias, AR) continua em /app/?go=neural ou pelo card WayFlow Neural.
+          new URLSearchParams(window.location.search).get('go') === 'neural' ? (
+            <Dashboard
+              user={user}
+              onLogout={handleLogout}
+              initialTab={payProduct ? 'pagamentos' : startTab}
+              initialProduct={payProduct}
+            />
+          ) : (
+            <div className="min-h-screen bg-[#0f0620] text-white p-4 md:p-8">
+              <div className="max-w-7xl mx-auto"><AccountPanel initialProduct={payProduct} /></div>
+            </div>
+          )
         )}
       </AnimatePresence>
     </div>
