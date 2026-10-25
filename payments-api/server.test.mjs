@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { eventToStatus, isEntitled, buildFinance, claimDecision, parseIngestSubscription, parseIngestTicket, normalizePhone, ticketAlertText, ticketReplyText, sendWhatsApp, buildInvoices, slimEvent, serviceTokenOk, makeRateLimiter, parseProductTokens, accessState, buildHub, signHandoff, verifyHandoff, parseAvatar, server } from './server.mjs';
+import { eventToStatus, isEntitled, buildFinance, claimDecision, parseIngestSubscription, parseIngestTicket, normalizePhone, ticketAlertText, ticketReplyText, sendWhatsApp, buildInvoices, slimEvent, serviceTokenOk, makeRateLimiter, parseProductTokens, accessState, buildHub, signHandoff, verifyHandoff, parseAvatar, MARKETPLACE_PATHS, server } from './server.mjs';
 
 test('eventos do Asaas mapeiam para o status certo', () => {
   assert.equal(eventToStatus('PAYMENT_RECEIVED'), 'ACTIVE');
@@ -260,4 +260,13 @@ test('parseAvatar aceita so JPEG pequeno e valido', () => {
   assert.equal(parseAvatar(`data:image/jpeg;base64,${Buffer.alloc(500, 1).toString('base64')}`), null);   // sem cabecalho JPEG
   assert.equal(parseAvatar(`data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(60 * 1024)]).toString('base64')}`), null);   // grande demais
   assert.equal(parseAvatar(undefined), null);
+});
+
+test('proxy do marketplace so aceita rotas conhecidas da visao CEO', () => {
+  for (const ok of ['finance', 'orders', 'clients', 'config', 'distributors', 'distributors/abc123', 'products/x_1', 'orders/abc/advance', 'orders/abc/refund', 'jobs/release-cashback']) {
+    assert.ok(MARKETPLACE_PATHS.test(ok), ok);
+  }
+  for (const bad of ['', 'auth/login', 'orders/abc/delete', '../finance', 'finance/../x', 'orders//refund', 'users']) {
+    assert.ok(!MARKETPLACE_PATHS.test(bad), bad);
+  }
 });

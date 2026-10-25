@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Crown, ChevronRight, Play, Users, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box } from 'lucide-react';
+import { Loader2, Crown, ChevronRight, Play, Users, ExternalLink, Download, Trash2, XCircle, Lock, Clock, Home, LayoutGrid, Wallet, HelpCircle, Settings, CreditCard, Gem, Plus, MessageSquare, Box, ShoppingBag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { payApi, brl, MyPayments, Hub, HubProject } from '../lib/pay';
 import { STATUS_LABEL } from './PaymentsPanel';
@@ -29,6 +29,7 @@ const CEO_NAV: { id: CeoSection; label: string; icon: React.ElementType }[] = [
   { id: 'geral', label: 'Visão geral', icon: Home },
   { id: 'clientes', label: 'Clientes', icon: Users },
   { id: 'financeiro', label: 'Financeiro', icon: Wallet },
+  { id: 'marketplace', label: 'Marketplace', icon: ShoppingBag },
   { id: 'suporte', label: 'Suporte', icon: HelpCircle },
 ];
 

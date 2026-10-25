@@ -48,6 +48,8 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina no .env}
       SUPPORT_EVO_INSTANCE: ${SUPPORT_EVO_INSTANCE:-nucleo}
       SUPPORT_WHATSAPP_TO: ${SUPPORT_WHATSAPP_TO:-}
+      BELA360_API_URL: ${BELA360_API_URL:-https://bela360.wayia.com.br/api}
+      MARKETPLACE_SERVICE_TOKEN: ${MARKETPLACE_SERVICE_TOKEN:-}
     networks:
       - wayia-net
 

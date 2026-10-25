@@ -25,6 +25,11 @@ const EVO_INSTANCE = env('SUPPORT_EVO_INSTANCE', 'nucleo');
 const SUPPORT_TO = env('SUPPORT_WHATSAPP_TO'); // numero do admin (DDI+DDD+numero)
 const PANEL_URL = env('PANEL_URL', 'https://wayia.com.br/app/');
 const HANDOFF_SECRET = env('HANDOFF_SECRET'); // assina o link projeto -> Financeiro (so billing, 2h)
+// Marketplace da Bela 360: a visao CEO do wayia.com.br opera a API do bela360 por aqui.
+// O admin e validado AQUI (JWT + ADMIN_EMAILS); o bela360 so aceita o token de servico.
+const BELA360_API = env('BELA360_API_URL', 'https://bela360.wayia.com.br/api').replace(/\/+$/, '');
+const MARKETPLACE_TOKEN = env('MARKETPLACE_SERVICE_TOKEN');
+export const MARKETPLACE_PATHS = /^(finance|orders|clients|config|audit|distributors|products|jobs)(\/[A-Za-z0-9_-]+(\/(advance|refund))?|\/release-cashback)?$/;
 const ALLOWED_ORIGINS = env('ALLOWED_ORIGINS', 'https://wayia.com.br').split(',').map((s) => s.trim());
 
 // ---------- helpers ----------
@@ -801,6 +806,23 @@ const updateTicket = async (req, id) => {
   return { ...row, whatsapp };
 };
 
+// ---------- marketplace (proxy CEO) ----------
+async function marketplaceProxy(req, url, sub) {
+  await adminFromJwt(req);
+  if (!MARKETPLACE_TOKEN) throw new HttpError(503, 'marketplace nao configurado (MARKETPLACE_SERVICE_TOKEN)');
+  if (!MARKETPLACE_PATHS.test(sub)) throw new HttpError(404, 'nao encontrado');
+  const hasBody = req.method === 'POST' || req.method === 'PUT';
+  const r = await fetch(`${BELA360_API}/marketplace/admin/${sub}${url.search}`, {
+    method: req.method,
+    headers: { 'Content-Type': 'application/json', 'x-service-token': MARKETPLACE_TOKEN },
+    body: hasBody ? JSON.stringify(await readJson(req)) : undefined,
+    signal: AbortSignal.timeout(15000),
+  }).catch(() => { throw new HttpError(502, 'bela360 indisponivel'); });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.success) throw new HttpError(r.status >= 400 && r.status < 500 ? r.status : 502, j.error?.message || 'erro no marketplace');
+  return j.data;
+}
+
 // ---------- server ----------
 export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -816,7 +838,9 @@ export const server = http.createServer(async (req, res) => {
   try {
     const put = url.pathname.match(/^\/admin\/products\/([a-z0-9-]+)$/);
     const tk = url.pathname.match(/^\/admin\/tickets\/([0-9a-f-]{36})\/reply$/);
-    const handler = put && req.method === 'PUT' ? (r) => updateProduct(r, put[1])
+    const mk = url.pathname.match(/^\/admin\/marketplace\/(.+)$/);
+    const handler = mk && ['GET', 'POST', 'PUT'].includes(req.method) ? (r, u) => marketplaceProxy(r, u, mk[1])
+      : put && req.method === 'PUT' ? (r) => updateProduct(r, put[1])
       : tk && req.method === 'POST' ? (r) => updateTicket(r, tk[1])
       : routes[`${req.method} ${url.pathname}`];
     if (!handler) throw new HttpError(404, 'nao encontrado');

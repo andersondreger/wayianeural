@@ -94,6 +94,11 @@ export const payApi = {
     call<PayTicket & { whatsapp?: 'sent' | 'failed' | 'skipped' }>(`/admin/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify(body) }),
   uploadAvatar: (image: string) => call<{ url: string }>('/me/avatar', { method: 'POST', body: JSON.stringify({ image }) }),
   adminOverview: () => call<Overview>('/admin/overview'),
+  mk: {
+    get: <T>(path: string) => call<T>(`/admin/marketplace/${path}`),
+    send: <T>(method: 'POST' | 'PUT', path: string, body?: unknown) =>
+      call<T>(`/admin/marketplace/${path}`, { method, body: JSON.stringify(body ?? {}) }),
+  },
   adminCreateProduct: (b: NewProduct) => call<PayProduct>('/admin/products', { method: 'POST', body: JSON.stringify(b) }),
   adminProducts: () => call<PayProduct[]>('/admin/products'),
   adminUpdateProduct: (slug: string, patch: { price_cents?: number; active?: boolean }) =>

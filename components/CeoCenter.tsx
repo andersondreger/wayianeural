@@ -4,9 +4,10 @@ import { payApi, brl, Overview, OverviewProduct, AccessState, NewProduct } from 
 import { ECOSYSTEM } from '../lib/ecosystem';
 import { FinanceDashboard } from './FinanceDashboard';
 import { SupportInbox } from './SupportInbox';
+import { MarketplaceCeo } from './MarketplaceCeo';
 import { DEMO_OVERVIEW, DEMO_FINANCE, DEMO_TICKETS } from '../lib/demo';
 
-export type CeoSection = 'geral' | 'clientes' | 'financeiro' | 'suporte';
+export type CeoSection = 'geral' | 'clientes' | 'financeiro' | 'marketplace' | 'suporte';
 
 const STATE_LABEL: Record<AccessState, string> = { FREE: 'Grátis', TRIAL: 'Teste', ACTIVE: 'Ativo', GRACE: 'Em atraso', EXPIRED: 'Expirado', NONE: 'Sem acesso' };
 const STATE_TONE: Record<AccessState, string> = {
@@ -101,6 +102,7 @@ export function CeoCenter({ section, demo }: { section: CeoSection; demo?: boole
   const names = useMemo(() => Object.fromEntries((o?.products ?? []).map(p => [p.slug, p.name])), [o]);
 
   if (section === 'financeiro') return <FinanceDashboard demo={demo ? DEMO_FINANCE : undefined} />;
+  if (section === 'marketplace') return <MarketplaceCeo demo={demo} />;
   if (section === 'suporte') return <SupportInbox demo={demo ? DEMO_TICKETS : undefined} />;
   if (err) return <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>;
   if (!o) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-white" size={44} /></div>;

@@ -83,3 +83,10 @@ teste vencido sem pagar = **somente leitura** (dados preservados, nao cria/envia
 3. Consultar `/entitlement?email&product&ref=<projeto>:<idDoNegocio>`; nas rotas que criam/enviam, responder 402 com `payUrl` se `access != full`.
 4. Subir em `warn`, conferir, depois `enforce`. Se a API cair o projeto libera (fail-open).
 Integrado: **waySend** (rotas de campanha/contatos/numeros/grupos, worker pausa campanha, faixa no painel). Falta: pet360, imob360, bela360, wayAR, Criar.
+
+## Marketplace Bela 360 (visao CEO)
+O dashboard (Visao CEO -> **Marketplace**) opera o marketplace de cashback/split da Bela 360. O navegador chama
+`/pay-api/admin/marketplace/<rota>`; o payments-api valida o admin (JWT + `ADMIN_EMAILS`) e repassa a
+`BELA360_API_URL/marketplace/admin/<rota>` com `x-service-token: MARKETPLACE_SERVICE_TOKEN`. Rotas liberadas:
+`finance, orders, clients, config, audit, distributors, products, jobs` (lista fechada em `MARKETPLACE_PATHS`).
+Cada clinica ve so a propria area em `bela360.wayia.com.br/marketplace`. Detalhes: `bela360/apps/api/src/modules/marketplace/CLAUDE.md`.
