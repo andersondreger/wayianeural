@@ -263,7 +263,7 @@ test('parseAvatar aceita so JPEG pequeno e valido', () => {
 });
 
 test('proxy do marketplace so aceita rotas conhecidas da visao CEO', () => {
-  for (const ok of ['finance', 'orders', 'clients', 'config', 'distributors', 'distributors/abc123', 'products/x_1', 'orders/abc/advance', 'orders/abc/refund', 'jobs/release-cashback', 'messages', 'messages/templates', 'jobs/dispatch-messages']) {
+  for (const ok of ['finance', 'orders', 'clients', 'config', 'distributors', 'distributors/abc123', 'products/x_1', 'orders/abc/advance', 'orders/abc/refund', 'jobs/release-cashback', 'messages', 'messages/templates', 'jobs/dispatch-messages', 'refund-requests', 'refund-requests/abc/decide']) {
     assert.ok(MARKETPLACE_PATHS.test(ok), ok);
   }
   for (const bad of ['', 'auth/login', 'orders/abc/delete', '../finance', 'finance/../x', 'orders//refund', 'users']) {

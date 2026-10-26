@@ -29,7 +29,7 @@ const HANDOFF_SECRET = env('HANDOFF_SECRET'); // assina o link projeto -> Financ
 // O admin e validado AQUI (JWT + ADMIN_EMAILS); o bela360 so aceita o token de servico.
 const BELA360_API = env('BELA360_API_URL', 'https://bela360.wayia.com.br/api').replace(/\/+$/, '');
 const MARKETPLACE_TOKEN = env('MARKETPLACE_SERVICE_TOKEN');
-export const MARKETPLACE_PATHS = /^(finance|orders|clients|config|audit|distributors|products|jobs|messages)(\/[A-Za-z0-9_-]+(\/(advance|refund))?|\/release-cashback)?$/;
+export const MARKETPLACE_PATHS = /^(finance|orders|clients|config|audit|distributors|products|jobs|messages|refund-requests)(\/[A-Za-z0-9_-]+(\/(advance|refund|decide))?|\/release-cashback)?$/;
 const ALLOWED_ORIGINS = env('ALLOWED_ORIGINS', 'https://wayia.com.br').split(',').map((s) => s.trim());
 
 // ---------- helpers ----------

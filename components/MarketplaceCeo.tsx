@@ -13,6 +13,7 @@ interface Fin {
   byDistributor: { id: string; name: string; orders: number; grossCents: number; toDistributorCents: number; commissionCents: number }[];
   orders: { id: string; number: number; status: string; splitStatus: string; business: string; distributor: string; paidCents: number; toDistributorCents: number; commissionCents: number; feeCents: number; cashbackCents: number; netRevenueCents: number }[];
 }
+interface RefundReq { id: string; orderId: string; source: string; gatewayRefunded: boolean; reason: string | null; requestedBy: string; order: { number: number; paidCents: number; cashbackCents: number; business: { name: string } } | null }
 interface Rules { cashbackSharePct: number; walletLimitPct: number; returnDays: number; feeBp: number }
 interface Client { id: string; name: string; orders: number; purchasedCents: number; wallet: { availableCents: number; pendingCents: number; usedCents: number } }
 
@@ -87,19 +88,41 @@ function Resumo({ demo }: { demo?: boolean }) {
 
 function Pedidos({ demo }: { demo?: boolean }) {
   const { data: f, err, load } = useLoad<Fin>('finance', demo);
+  const reqs = useLoad<RefundReq[]>('refund-requests?status=PENDENTE', demo);
+  const reloadReq = reqs.load;
   const [msg, setMsg] = useState('');
+  const decide = async (r: RefundReq, decision: 'APROVAR' | 'REJEITAR') => {
+    const txt = decision === 'APROVAR'
+      ? `Aprovar o estorno do pedido #${r.order?.number}? ${r.gatewayRefunded ? 'O dinheiro já foi devolvido pelo gateway.' : 'O dinheiro será devolvido no gateway.'} O cashback já liberado (${brl(r.order?.cashbackCents ?? 0)}) será revertido do saldo do cliente.`
+      : `Rejeitar o estorno do pedido #${r.order?.number}? O pedido e o cashback ficam como estão.`;
+    if (!window.confirm(txt)) return;
+    try { await payApi.mk.send('POST', `refund-requests/${r.id}/decide`, { decision }); setMsg(decision === 'APROVAR' ? 'Estorno aprovado.' : 'Estorno rejeitado.'); reqs.load(); load(); }
+    catch (e) { setMsg((e as Error).message); }
+  };
   const act = async (id: string, kind: 'ENVIADO' | 'ENTREGUE' | 'refund') => {
-    if (kind === 'refund' && !window.confirm('Estornar este pedido? O split é desfeito, o cashback a liberar é cancelado e o saldo usado volta ao cliente.')) return;
+    if (kind === 'refund' && !window.confirm('Estornar este pedido? O split é desfeito, o cashback a liberar é cancelado e o saldo usado volta ao cliente. Se o cashback já foi liberado, o estorno vai para aprovação.')) return;
     try {
-      if (kind === 'refund') await payApi.mk.send('POST', `orders/${id}/refund`, {});
-      else await payApi.mk.send('POST', `orders/${id}/advance`, { to: kind });
-      setMsg('Atualizado.'); load();
+      if (kind === 'refund') {
+        const r = await payApi.mk.send<{ pendingApproval?: boolean }>('POST', `orders/${id}/refund`, {});
+        setMsg(r?.pendingApproval ? 'Cashback já liberado: o estorno ficou aguardando sua aprovação (veja o quadro abaixo).' : 'Estornado.');
+        reloadReq();
+      } else { await payApi.mk.send('POST', `orders/${id}/advance`, { to: kind }); setMsg('Atualizado.'); }
+      load();
     } catch (e) { setMsg((e as Error).message); }
   };
   if (!f) return <Wait err={err} />;
   return (
     <div className="space-y-3">
       {msg && <div role="status" className="rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold">{msg}</div>}
+      {!!reqs.data?.length && (
+        <div className={`${card} p-5 space-y-3 border-2 border-amber-400`}>
+          <p className="font-black">Estornos aguardando sua aprovação</p>
+          {reqs.data.map(r => (
+            <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-50 p-3 text-sm">
+              <div><b>Pedido #{r.order?.number} · {r.order?.business.name}</b><p className="text-slate-600">{brl(r.order?.paidCents ?? 0)} pagos · cashback liberado {brl(r.order?.cashbackCents ?? 0)} · {r.source === 'GATEWAY' ? 'o gateway já devolveu o dinheiro' : 'pedido por ' + r.requestedBy}{r.reason ? ` · ${r.reason}` : ''}</p></div>
+              <div className="flex gap-2"><button className={primary} onClick={() => decide(r, 'APROVAR')}>Aprovar</button><button className={ghost} onClick={() => decide(r, 'REJEITAR')}>Rejeitar</button></div>
+            </div>))}
+        </div>)}
       {f.orders.length === 0 && <div className={`${card} p-6 text-sm text-slate-500`}>Nenhum pedido ainda.</div>}
       {f.orders.map(o => (
         <div key={o.id} className={`${card} p-5 space-y-3`}>
@@ -115,7 +138,7 @@ function Pedidos({ demo }: { demo?: boolean }) {
           <div className="flex gap-2 flex-wrap">
             <button className={ghost} disabled={o.status !== 'PAGO'} onClick={() => act(o.id, 'ENVIADO')}>Marcar enviado</button>
             <button className={ghost} disabled={o.status !== 'ENVIADO'} onClick={() => act(o.id, 'ENTREGUE')}>Marcar entregue</button>
-            <button className={`${ghost} !bg-red-50 !text-red-700`} disabled={o.status === 'ESTORNADO' || o.status === 'CASHBACK_LIBERADO'} onClick={() => act(o.id, 'refund')}>Estornar</button>
+            <button className={`${ghost} !bg-red-50 !text-red-700`} disabled={o.status === 'ESTORNADO'} onClick={() => act(o.id, 'refund')}>Estornar</button>
           </div>
         </div>
       ))}
