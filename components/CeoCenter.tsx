@@ -7,6 +7,8 @@ import { SupportInbox } from './SupportInbox';
 import { MarketplaceCeo } from './MarketplaceCeo';
 import { DEMO_OVERVIEW, DEMO_FINANCE, DEMO_TICKETS } from '../lib/demo';
 
+const DEMO_MK = { totals: { grossCents: 32880, commissionCents: 3648, feeCents: 986, cashbackCents: 1824, netRevenueCents: 838, cashbackReserveCents: 1824, orders: 2 } };
+
 export type CeoSection = 'geral' | 'clientes' | 'financeiro' | 'marketplace' | 'suporte';
 
 const STATE_LABEL: Record<AccessState, string> = { FREE: 'Grátis', TRIAL: 'Teste', ACTIVE: 'Ativo', GRACE: 'Em atraso', EXPIRED: 'Expirado', NONE: 'Sem acesso' };
@@ -101,7 +103,7 @@ export function CeoCenter({ section, demo }: { section: CeoSection; demo?: boole
 
   const names = useMemo(() => Object.fromEntries((o?.products ?? []).map(p => [p.slug, p.name])), [o]);
 
-  if (section === 'financeiro') return <FinanceDashboard demo={demo ? DEMO_FINANCE : undefined} />;
+  if (section === 'financeiro') return <FinanceDashboard demo={demo ? DEMO_FINANCE : undefined} demoMk={demo ? DEMO_MK : undefined} />;
   if (section === 'marketplace') return <MarketplaceCeo demo={demo} />;
   if (section === 'suporte') return <SupportInbox demo={demo ? DEMO_TICKETS : undefined} />;
   if (err) return <div className="rounded-2xl bg-red-100 text-red-700 px-5 py-3 text-sm font-bold">{err}</div>;

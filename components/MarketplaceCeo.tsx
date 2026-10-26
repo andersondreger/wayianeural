@@ -36,8 +36,37 @@ const Kpi = ({ label, value, hint, tone }: { label: string; value: string; hint?
   </div>
 );
 
+// Dados de exemplo do modo demonstrativo (sem login): so leitura, nada vai ao servidor.
+const DEMO_DISTS: Dist[] = [
+  { id: 'd1', name: 'Distribuidora Cabelo Pro', contact: 'vendas@exemplo.com', commissionBp: 1200, payDays: 30, status: 'ATIVO', asaasWalletId: 'demo', _count: { products: 3 } },
+  { id: 'd2', name: 'Estética Facial Brasil', contact: 'contato@exemplo.com', commissionBp: 1000, payDays: 15, status: 'ATIVO', asaasWalletId: 'demo', _count: { products: 3 } },
+  { id: 'd3', name: 'Descartáveis & Equipamentos SP', contact: null, commissionBp: 800, payDays: 30, status: 'EM_NEGOCIACAO', asaasWalletId: null, _count: { products: 2 } },
+];
+const DEMO_DATA: Record<string, unknown> = {
+  finance: {
+    totals: { grossCents: 32880, toDistributorsCents: 29232, commissionCents: 3648, feeCents: 986, netCommissionCents: 2662, cashbackCents: 1824, netRevenueCents: 838, cashbackReserveCents: 1824, orders: 2, refunded: 0 },
+    byDistributor: [
+      { id: 'd1', name: 'Distribuidora Cabelo Pro', orders: 1, grossCents: 17980, toDistributorCents: 15822, commissionCents: 2158 },
+      { id: 'd2', name: 'Estética Facial Brasil', orders: 1, grossCents: 14900, toDistributorCents: 13410, commissionCents: 1490 },
+    ],
+    orders: [
+      { id: 'o2', number: 2, status: 'ENTREGUE', splitStatus: 'LIQUIDADO', business: 'Clínica Exemplo', distributor: 'Estética Facial Brasil', paidCents: 14900, toDistributorCents: 13410, commissionCents: 1490, feeCents: 447, cashbackCents: 745, netRevenueCents: 298 },
+      { id: 'o1', number: 1, status: 'ENTREGUE', splitStatus: 'LIQUIDADO', business: 'Clínica Exemplo', distributor: 'Distribuidora Cabelo Pro', paidCents: 17980, toDistributorCents: 15822, commissionCents: 2158, feeCents: 539, cashbackCents: 1079, netRevenueCents: 540 },
+    ],
+  },
+  clients: [{ id: 'c1', name: 'Clínica Exemplo', orders: 2, purchasedCents: 32880, wallet: { availableCents: 0, pendingCents: 1824, usedCents: 0 } }],
+  distributors: DEMO_DISTS,
+  products: [
+    { id: 'p1', name: 'Shampoo Profissional 1L', category: 'CABELO', priceCents: 8990, active: true, distributorId: 'd1', distributor: { id: 'd1', name: 'Distribuidora Cabelo Pro' } },
+    { id: 'p2', name: 'Sérum Vitamina C 30ml', category: 'ESTETICA_FACIAL', priceCents: 14900, active: true, distributorId: 'd2', distributor: { id: 'd2', name: 'Estética Facial Brasil' } },
+  ],
+  config: { cashbackSharePct: 50, walletLimitPct: 30, returnDays: 7, feeBp: 300 },
+  'refund-requests?status=PENDENTE': [],
+  messages: { mode: 'simulado', whatsappConfigured: false, emailConfigured: false, counts: {}, templates: [], recent: [] },
+};
+
 function useLoad<T>(path: string, demo?: boolean) {
-  const [data, setData] = useState<T | null>(null);
+  const [data, setData] = useState<T | null>((demo ? (DEMO_DATA[path] as T) : null) ?? null);
   const [err, setErr] = useState('');
   const load = useCallback(() => {
     if (demo) return;
@@ -312,9 +341,9 @@ const SUB = [['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['distribuidores', 'D
 
 export function MarketplaceCeo({ demo }: { demo?: boolean }) {
   const [tab, setTab] = useState<(typeof SUB)[number][0]>('resumo');
-  if (demo) return <div className={`${card} p-6 text-sm`}>Demonstrativo: entre com sua conta de admin para operar o Marketplace da Bela 360.</div>;
   return (
     <div className="space-y-5">
+      {demo && <div className="rounded-2xl bg-amber-100 text-amber-900 px-5 py-3 text-sm font-bold">Demonstrativo: dados de exemplo. Entre com sua conta de admin para operar o Marketplace da Bela 360.</div>}
       <div className="rounded-[1.75rem] bg-[#6d22d8] p-6">
         <p className="text-sm text-white/80">Bela 360 · Marketplace com cashback e split</p>
         <h2 className="text-2xl md:text-3xl font-black mt-1">Distribuidores, pedidos e financeiro da plataforma</h2>
@@ -322,12 +351,12 @@ export function MarketplaceCeo({ demo }: { demo?: boolean }) {
       </div>
       <div className="flex gap-2 overflow-x-auto">{SUB.map(([k, l]) => (
         <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${tab === k ? 'bg-white text-[#1c0b3d]' : 'bg-white/10 text-white/80 hover:bg-white/20'}`}>{l}</button>))}</div>
-      {tab === 'resumo' && <Resumo />}
-      {tab === 'pedidos' && <Pedidos />}
-      {tab === 'distribuidores' && <Distribuidores />}
-      {tab === 'produtos' && <Produtos />}
-      {tab === 'mensagens' && <Mensagens />}
-      {tab === 'regras' && <Regras />}
+      {tab === 'resumo' && <Resumo demo={demo} />}
+      {tab === 'pedidos' && <Pedidos demo={demo} />}
+      {tab === 'distribuidores' && <Distribuidores demo={demo} />}
+      {tab === 'produtos' && <Produtos demo={demo} />}
+      {tab === 'mensagens' && <Mensagens demo={demo} />}
+      {tab === 'regras' && <Regras demo={demo} />}
     </div>
   );
 }
