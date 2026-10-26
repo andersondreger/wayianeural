@@ -56,7 +56,33 @@ function RevenueBars({ months }: { months: Finance['months'] }) {
   );
 }
 
-export function FinanceDashboard({ demo }: { demo?: Finance }) {
+interface MkFin { totals: { grossCents: number; commissionCents: number; feeCents: number; cashbackCents: number; netRevenueCents: number; cashbackReserveCents: number; orders: number } }
+
+// Receita do Marketplace da Bela 360 (so pedidos pagos). Falha de carga esconde o bloco: nao derruba o financeiro.
+function MarketplaceRevenue({ demo }: { demo?: MkFin }) {
+  const [m, setM] = useState<MkFin | null>(demo ?? null);
+  useEffect(() => { if (!demo) payApi.mk.get<MkFin>('finance').then(setM).catch(() => setM(null)); }, [demo]);
+  if (!m) return null;
+  const t = m.totals;
+  return (
+    <section className={`${card} p-6 space-y-4`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xl font-extrabold">Marketplace Bela 360</h3>
+        <span className="text-xs font-bold px-3 py-1 rounded-full bg-violet-100 text-violet-800">{t.orders} pedido(s) pagos</span>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div><p className="text-xs text-slate-500">Vendas</p><p className="text-xl font-black">{brl(t.grossCents)}</p></div>
+        <div><p className="text-xs text-slate-500">Comissão</p><p className="text-xl font-black">{brl(t.commissionCents)}</p></div>
+        <div><p className="text-xs text-slate-500">Taxas do gateway</p><p className="text-xl font-black">{brl(t.feeCents)}</p></div>
+        <div><p className="text-xs text-slate-500">Cashback devido</p><p className="text-xl font-black">{brl(t.cashbackCents)}</p></div>
+        <div><p className="text-xs text-slate-500">Receita líquida</p><p className="text-xl font-black text-emerald-600">{brl(t.netRevenueCents)}</p></div>
+      </div>
+      <p className="text-xs text-slate-500">Receita líquida = comissão − taxas − cashback. Reserva de cashback ainda não liberado: {brl(t.cashbackReserveCents)}.</p>
+    </section>
+  );
+}
+
+export function FinanceDashboard({ demo, demoMk }: { demo?: Finance; demoMk?: MkFin }) {
   const [f, setF] = useState<Finance | null>(null);
   const [err, setErr] = useState('');
   const [table, setTable] = useState(false);
@@ -96,6 +122,8 @@ export function FinanceDashboard({ demo }: { demo?: Finance }) {
         <Tile label="Novas no mês" value={String(k.newThisMonth)} />
         <Tile label="Churn do mês" value={`${k.churnPct}%`} hint={`${k.canceledThisMonth} canceladas`} tone={k.churnPct >= 10 ? 'bad' : undefined} />
       </div>
+
+      <MarketplaceRevenue demo={demoMk} />
 
       <section className={`${card} p-6 space-y-4`}>
         <div className="flex items-center justify-between">
