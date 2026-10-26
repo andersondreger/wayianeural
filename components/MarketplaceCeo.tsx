@@ -232,7 +232,60 @@ function Regras({ demo }: { demo?: boolean }) {
   );
 }
 
-const SUB = [['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['distribuidores', 'Distribuidores'], ['produtos', 'Produtos'], ['regras', 'Regras']] as const;
+interface MsgView {
+  mode: string; whatsappConfigured: boolean; emailConfigured: boolean; counts: Record<string, number>;
+  templates: { type: string; channel: string; audience: string; body: string; waTemplateName: string; active: boolean; customized: boolean }[];
+  recent: { id: string; orderId: string; type: string; channel: string; audience: string; status: string; error: string | null; createdAt: string }[];
+}
+const MSG_LABEL: Record<string, string> = { PEDIDO_PAGO: 'Pagamento confirmado', PEDIDO_ENVIADO: 'Pedido enviado', PEDIDO_ENTREGUE: 'Pedido entregue', CASHBACK_LIBERADO: 'Cashback liberado', PEDIDO_ESTORNADO: 'Pedido estornado', NOVO_PEDIDO: 'Novo pedido (distribuidor)' };
+
+function Mensagens({ demo }: { demo?: boolean }) {
+  const { data, err, load } = useLoad<MsgView>('messages', demo);
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [note, setNote] = useState('');
+  if (!data) return <Wait err={err} />;
+  const key = (t: { type: string; channel: string }) => `${t.type}:${t.channel}`;
+  const save = async (t: MsgView['templates'][number], patch: { body?: string; waTemplateName?: string; active?: boolean }) => {
+    try { await payApi.mk.send('PUT', 'messages/templates', { type: t.type, channel: t.channel, ...patch }); setNote('Salvo.'); setEdit(e => { const n = { ...e }; delete n[key(t)]; return n; }); load(); }
+    catch (er) { setNote((er as Error).message); }
+  };
+  const dispatch = async () => { try { const r = await payApi.mk.send<{ sent: number; failed: number }>('POST', 'jobs/dispatch-messages'); setNote(`Fila processada: ${r.sent} enviada(s), ${r.failed} com falha.`); load(); } catch (er) { setNote((er as Error).message); } };
+  const modeTxt = data.mode === 'ativo' ? 'Envio real ligado' : data.mode === 'simulado' ? 'Modo simulado (só registra, nada é enviado)' : 'Mensagens desligadas';
+  return (
+    <div className="space-y-5">
+      <div className={`${card} p-5 space-y-2`}>
+        <p className="font-black">{modeTxt}</p>
+        <p className="text-sm text-slate-600">WhatsApp Cloud API oficial: {data.whatsappConfigured ? 'configurada' : 'não configurada'} · E-mail: {data.emailConfigured ? 'configurado' : 'não configurado'}.
+          São avisos transacionais do próprio pedido, no máximo 30 por minuto. O WhatsApp só sai para o cliente que ativou o consentimento; o distribuidor recebe só por e-mail.</p>
+        <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-600">{Object.entries(data.counts).map(([s, n]) => <span key={s} className="rounded-full bg-[#ede9fe] px-3 py-1">{s}: {n}</span>)}</div>
+        <button className={ghost} onClick={dispatch}>Processar fila agora</button>
+        {note && <p className="text-sm font-bold text-[#6d28d9]">{note}</p>}
+      </div>
+      <div className={`${card} p-5`}>
+        <h3 className="font-black mb-1">Textos e templates</h3>
+        <p className="text-xs text-slate-500 mb-3">Variáveis: {'{nome} {pedido} {valor} {cashback} {distribuidor}'}. No WhatsApp vale o template aprovado na Meta (nome abaixo); o texto serve de base para cadastrá-lo.</p>
+        <div className="space-y-3">{data.templates.map(t => (
+          <div key={key(t)} className="rounded-2xl border border-slate-200 p-4 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2"><b>{MSG_LABEL[t.type]} · {t.channel === 'WHATSAPP' ? 'WhatsApp' : 'E-mail'}</b>
+              <label className="text-xs font-bold flex items-center gap-2"><input type="checkbox" checked={t.active} onChange={e => save(t, { active: e.target.checked })} />Ativo</label></div>
+            <textarea className={field} rows={2} value={edit[key(t)] ?? t.body} onChange={e => setEdit(s => ({ ...s, [key(t)]: e.target.value }))} />
+            <div className="flex flex-wrap items-center gap-2">
+              {t.channel === 'WHATSAPP' && <span className="text-xs text-slate-500">template Meta: <code>{t.waTemplateName}</code></span>}
+              {edit[key(t)] !== undefined && edit[key(t)] !== t.body && <button className={ghost} onClick={() => save(t, { body: edit[key(t)] })}>Salvar texto</button>}
+            </div>
+          </div>))}</div>
+      </div>
+      <div className={`${card} p-5`}>
+        <h3 className="font-black mb-3">Últimas mensagens</h3>
+        <table className="w-full text-sm text-left"><thead className="text-xs text-slate-500"><tr><th className="py-2">Quando</th><th>Tipo</th><th>Canal</th><th>Para</th><th>Status</th></tr></thead>
+          <tbody>{data.recent.map(m => <tr key={m.id} className="border-t border-slate-100"><td className="py-2">{new Date(m.createdAt).toLocaleString('pt-BR')}</td><td>{MSG_LABEL[m.type]}</td><td>{m.channel === 'WHATSAPP' ? 'WhatsApp' : 'E-mail'}</td><td>{m.audience === 'CLIENTE' ? 'Cliente' : 'Distribuidor'}</td><td title={m.error ?? ''}>{m.status}{m.error ? ' ⓘ' : ''}</td></tr>)}
+            {!data.recent.length && <tr><td colSpan={5} className="py-6 text-center text-slate-500">Nenhuma mensagem ainda.</td></tr>}</tbody></table>
+      </div>
+    </div>
+  );
+}
+
+const SUB = [['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['distribuidores', 'Distribuidores'], ['produtos', 'Produtos'], ['mensagens', 'Mensagens'], ['regras', 'Regras']] as const;
 
 export function MarketplaceCeo({ demo }: { demo?: boolean }) {
   const [tab, setTab] = useState<(typeof SUB)[number][0]>('resumo');
@@ -250,6 +303,7 @@ export function MarketplaceCeo({ demo }: { demo?: boolean }) {
       {tab === 'pedidos' && <Pedidos />}
       {tab === 'distribuidores' && <Distribuidores />}
       {tab === 'produtos' && <Produtos />}
+      {tab === 'mensagens' && <Mensagens />}
       {tab === 'regras' && <Regras />}
     </div>
   );
