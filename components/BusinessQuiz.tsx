@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft, ArrowRight, Camera, PawPrint, Building2, Sparkles,
   ShoppingBag, Layers, ImagePlus, X, TrendingUp, MessageCircle,
-  Scan, HeartHandshake, CheckCircle2, ShieldCheck, Rocket, User, Mail, Smartphone
+  Scan, HeartHandshake, CheckCircle2, ShieldCheck, Rocket, User, Mail, Smartphone, Lock
 } from 'lucide-react';
 
 export interface BusinessQuizData {
@@ -15,6 +15,7 @@ export interface BusinessQuizData {
   contactName: string;
   contactEmail: string;
   contactPhone: string;
+  password: string; // so vai ao OtpStep; nunca e salvo em quiz_leads
 }
 
 const SEGMENTS = [
@@ -44,13 +45,14 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [password, setPassword] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lastStep = STEP_LABELS.length - 1;
 
   const goNext = () => {
     if (step >= lastStep) {
-      onComplete({ businessName, segment, photoUrl, goals, contactName, contactEmail, contactPhone });
+      onComplete({ businessName, segment, photoUrl, goals, contactName, contactEmail, contactPhone, password });
       return;
     }
     setDirection(1);
@@ -80,7 +82,7 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
 
   const canAdvance = step === 0 ? (businessName.trim().length > 0 && segment.length > 0)
     : step === 2 ? goals.length > 0
-    : step === 3 ? (contactName.trim().length > 0 && isValidEmail(contactEmail) && isValidPhone(contactPhone))
+    : step === 3 ? (contactName.trim().length > 0 && isValidEmail(contactEmail) && isValidPhone(contactPhone) && password.length >= 6)
     : true;
 
   const variants = {
@@ -270,6 +272,22 @@ export function BusinessQuiz({ onComplete }: { onComplete: (data: BusinessQuizDa
                   </div>
                   {contactPhone.length > 0 && !isValidPhone(contactPhone) && (
                     <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest ml-1">Telefone inválido (com DDD)</p>
+                  )}
+                  <div className="relative">
+                    <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                    <input
+                      required
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={6}
+                      placeholder="Criar senha (mín. 6 caracteres)"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-11 pr-5 outline-none focus:border-orange-500/40 font-bold transition-all text-sm"
+                    />
+                  </div>
+                  {password.length > 0 && password.length < 6 && (
+                    <p className="text-[8px] font-bold text-red-500 uppercase tracking-widest ml-1">Senha com pelo menos 6 caracteres</p>
                   )}
                 </div>
 

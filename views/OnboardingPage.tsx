@@ -48,7 +48,7 @@ export function OnboardingPage({ onCompleteQuiz, onBack }: {
 
       {/* LADO ESQUERDO: FORMULARIO INTERATIVO SOBRE O NEGOCIO */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 relative overflow-hidden border-r border-white/5 bg-gradient-to-br from-orange-500/[0.02] to-transparent">
-        <BusinessQuiz onComplete={d => { onCompleteQuiz(d); setOtp({ email: d.contactEmail, meta: { full_name: d.contactName || d.businessName, phone: d.contactPhone } }); }} />
+        <BusinessQuiz onComplete={d => { onCompleteQuiz(d); setOtp({ email: d.contactEmail, password: d.password, meta: { full_name: d.contactName || d.businessName, phone: d.contactPhone } }); }} />
       </div>
 
       {/* LADO DIREITO: ACESSO GRATUITO OU LOGIN */}
