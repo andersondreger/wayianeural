@@ -4,8 +4,20 @@ import { supabase } from '../lib/supabase';
 
 // Login real: o Supabase manda um codigo ao e-mail e so entra quem o digita (cria a conta no 1o acesso).
 // Nome/telefone do cadastro vao para user_metadata. Sucesso = sessao criada; quem chamou reage via onAuthStateChange.
-export function OtpStep({ email, meta, onBack, onDone }: {
-  email: string; meta?: { full_name?: string; phone?: string }; onBack: () => void; onDone: () => void;
+// Traduz o erro do Supabase Auth; so culpa o e-mail quando o erro realmente e de e-mail.
+export function authErrorMessage(error: { message?: string; status?: number }): string {
+  const m = error.message || '';
+  if (error.status === 402 || /restricted|quota|violations/i.test(m)) return 'Serviço temporariamente indisponível. Tente novamente em alguns instantes.';
+  if (/rate|seconds/i.test(m) || error.status === 429) return 'Muitas tentativas. Aguarde um minuto e tente novamente.';
+  if (/invalid.*email|email.*invalid|valid email/i.test(m)) return 'E-mail inválido. Confira o endereço digitado.';
+  if (/invalid login|credentials/i.test(m)) return 'E-mail ou senha incorretos.';
+  if (/not confirmed/i.test(m)) return 'E-mail ainda não confirmado. Use "Entrar com código por e-mail".';
+  if (/failed to fetch|network/i.test(m)) return 'Sem conexão com o servidor. Verifique sua internet.';
+  return 'Não foi possível concluir agora. Tente novamente em instantes.';
+}
+
+export function OtpStep({ email, meta, password, onBack, onDone }: {
+  email: string; password?: string; meta?: { full_name?: string; phone?: string }; onBack: () => void; onDone: () => void;
 }) {
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState('');
@@ -16,14 +28,19 @@ export function OtpStep({ email, meta, onBack, onDone }: {
     setBusy(true); setErr('');
     const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true, data: meta, emailRedirectTo: `${window.location.origin}/dashboard/` } });
     setBusy(false);
-    if (error) setErr(/rate|seconds/i.test(error.message) ? 'Aguarde um minuto para pedir outro código.' : 'Não foi possível enviar o código. Confira o e-mail.');
+    if (error) setErr(authErrorMessage(error));
     else setSent(true);
   };
   const verify = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setErr('');
     const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' });
-    setBusy(false);
-    if (error) setErr('Código inválido ou expirado.'); else onDone();
+    if (error) { setBusy(false); setErr('Código inválido ou expirado.'); return; }
+    // Cadastro: grava a senha escolhida (a sessao ja existe apos o codigo). Sem ela, o cliente ainda entra por codigo.
+    if (password) {
+      const { error: pwErr } = await supabase.auth.updateUser({ password });
+      if (pwErr) { setBusy(false); setErr('Entrou, mas não foi possível salvar a senha. Defina-a depois no painel.'); onDone(); return; }
+    }
+    setBusy(false); onDone();
   };
 
   return (

@@ -1,23 +1,38 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, User, Mail, Smartphone, LogIn, Sparkles } from 'lucide-react';
+import { ArrowLeft, User, Mail, Smartphone, LogIn, Sparkles, Lock } from 'lucide-react';
 import { GlassButton } from '../components/Buttons';
 import { BusinessQuiz, BusinessQuizData } from '../components/BusinessQuiz';
-import { OtpStep } from '../components/OtpStep';
+import { OtpStep, authErrorMessage } from '../components/OtpStep';
+import { supabase } from '../lib/supabase';
 
 // Nenhum caminho aqui cria usuario sem provar o e-mail: login, cadastro e quiz terminam no codigo (OtpStep).
 export function OnboardingPage({ onCompleteQuiz, onBack }: {
   onCompleteQuiz: (data: BusinessQuizData) => void;
   onBack: () => void;
 }) {
-  const [otp, setOtp] = useState<{ email: string; meta?: { full_name?: string; phone?: string } } | null>(null);
+  const [otp, setOtp] = useState<{ email: string; password?: string; meta?: { full_name?: string; phone?: string } } | null>(null);
   const [isLoginMode, setIsLoginMode] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [password, setPassword] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginErr, setLoginErr] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setOtp(isLoginMode ? { email: formData.email } : { email: formData.email, meta: { full_name: formData.name, phone: formData.phone } });
+    if (!isLoginMode) {
+      if (password.length < 6) { setLoginErr('A senha precisa ter pelo menos 6 caracteres.'); return; }
+      setLoginErr('');
+      setOtp({ email: formData.email, password, meta: { full_name: formData.name, phone: formData.phone } });
+      return;
+    }
+    // Login de usuario cadastrado: e-mail + senha. O App reage a sessao (onAuthStateChange).
+    setLoginBusy(true); setLoginErr('');
+    const { error } = await supabase.auth.signInWithPassword({ email: formData.email.trim(), password });
+    setLoginBusy(false);
+    if (error) setLoginErr(authErrorMessage(error));
   };
 
   return (
@@ -38,7 +53,7 @@ export function OnboardingPage({ onCompleteQuiz, onBack }: {
 
       {/* LADO DIREITO: ACESSO GRATUITO OU LOGIN */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 bg-black relative">
-        {otp ? <OtpStep email={otp.email} meta={otp.meta} onBack={() => setOtp(null)} onDone={() => { /* App reage a sessao (onAuthStateChange) */ }} /> : (
+        {otp ? <OtpStep email={otp.email} password={otp.password} meta={otp.meta} onBack={() => setOtp(null)} onDone={() => { /* App reage a sessao (onAuthStateChange) */ }} /> : (
         <div className="max-w-md w-full space-y-8 z-10">
           <div className="text-center lg:text-left space-y-4">
              <div className="flex items-center gap-2 text-blue-500 mb-2">
@@ -99,14 +114,57 @@ export function OnboardingPage({ onCompleteQuiz, onBack }: {
               />
             </div>
 
-            <GlassButton type="submit" className="w-full !py-5 mt-4 !text-[12px] !border-blue-500/20 hover:!bg-blue-600/10 flex items-center justify-center gap-2">
-              {isLoginMode ? <><LogIn size={14} /> Acessar Dashboard</> : <><Sparkles size={14} className="text-blue-500" /> Acessar Gratuitamente</>}
+            {(
+              <div className="space-y-1.5">
+                <label className="text-[8px] font-black uppercase text-gray-700 tracking-widest ml-1 flex items-center gap-2">
+                  <Lock size={10} /> {isLoginMode ? 'Senha' : 'Criar senha'}
+                </label>
+                <input
+                  required
+                  type="password"
+                  autoComplete={isLoginMode ? 'current-password' : 'new-password'}
+                  minLength={isLoginMode ? undefined : 6}
+                  placeholder={isLoginMode ? 'Sua senha' : 'Mínimo 6 caracteres'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-4 px-5 outline-none focus:border-blue-500/40 font-bold transition-all text-sm"
+                />
+              </div>
+            )}
+            {loginErr && <p role="alert" className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{loginErr}</p>}
+
+            <GlassButton type="submit" disabled={loginBusy} className="w-full !py-5 mt-4 !text-[12px] !border-blue-500/20 hover:!bg-blue-600/10 flex items-center justify-center gap-2">
+              {isLoginMode ? <><LogIn size={14} /> {loginBusy ? 'Entrando...' : 'Acessar Dashboard'}</> : <><Sparkles size={14} className="text-blue-500" /> Acessar Gratuitamente</>}
             </GlassButton>
           </form>
 
+          {isLoginMode && (
+            <>
+              <div className="flex items-center gap-3 text-gray-700">
+                <div className="flex-1 h-px bg-white/10" /><span className="text-[8px] font-black uppercase tracking-widest">ou continue com</span><div className="flex-1 h-px bg-white/10" />
+              </div>
+              {/* Apenas visual: ainda sem conexao com OAuth. */}
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" aria-disabled="true" title="Em breve" onClick={e => e.preventDefault()} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-[10px] font-black uppercase tracking-widest text-gray-300 cursor-not-allowed">
+                  <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.6 5.9c4.5-4.1 7-10.2 7-17.6z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.3.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+                  Google
+                </button>
+                <button type="button" aria-disabled="true" title="Em breve" onClick={e => e.preventDefault()} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-[10px] font-black uppercase tracking-widest text-gray-300 cursor-not-allowed">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 1.7 2.7 1.2 3.3.9.1-.7.4-1.2.7-1.5-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+                  GitHub
+                </button>
+              </div>
+              <div className="text-center">
+                <button type="button" onClick={() => formData.email ? setOtp({ email: formData.email }) : setLoginErr('Digite seu e-mail para receber o código.')} className="text-[9px] font-black uppercase tracking-widest text-gray-600 hover:text-blue-500 transition-colors">
+                  Primeiro acesso ou sem senha? Entrar com código por e-mail
+                </button>
+              </div>
+            </>
+          )}
+
           <div className="text-center">
             <button
-              onClick={() => setIsLoginMode(!isLoginMode)}
+              onClick={() => { setIsLoginMode(!isLoginMode); setLoginErr(''); setPassword(''); }}
               className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-600 hover:text-blue-500 transition-colors"
             >
               {isLoginMode ? 'Novo por aqui? Criar conta grátis' : 'Já possui acesso? Fazer Login'}
