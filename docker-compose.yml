@@ -7,7 +7,6 @@ services:
     restart: unless-stopped
     environment:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina no .env}
-      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?defina no .env}
     networks:
       - wayia-net
     healthcheck:
@@ -36,8 +35,13 @@ services:
     container_name: wayianeural-payments
     restart: unless-stopped
     environment:
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?defina no .env}
-      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?defina no .env}
+      DATABASE_URL: ${DATABASE_URL:?defina no .env}
+      AUTH_SECRET: ${AUTH_SECRET:?defina no .env}
+      REST_URL: http://wayianeural-rest:3000
+      APP_URL: https://wayia.com.br
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      AVATAR_DIR: /data/avatars
       ASAAS_API_KEY: ${ASAAS_API_KEY:?defina no .env}
       ASAAS_API_BASE_URL: ${ASAAS_API_BASE_URL:-https://sandbox.asaas.com/api/v3}
       ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina no .env}
@@ -50,8 +54,28 @@ services:
       SUPPORT_WHATSAPP_TO: ${SUPPORT_WHATSAPP_TO:-}
       BELA360_API_URL: ${BELA360_API_URL:-https://bela360.wayia.com.br/api}
       MARKETPLACE_SERVICE_TOKEN: ${MARKETPLACE_SERVICE_TOKEN:-}
+    volumes:
+      - avatars:/data/avatars
+    depends_on:
+      - rest
     networks:
       - wayia-net
+
+  # PostgREST: API REST sobre o Postgres do wayianeural (usada só pelo payments-api, rede interna).
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: wayianeural-rest
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: ${DATABASE_URL:?defina no .env}
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${AUTH_SECRET:?defina no .env}
+    networks:
+      - wayia-net
+
+volumes:
+  avatars:
 
 networks:
   wayia-net:

@@ -1,7 +1,7 @@
 # Renderizado no start do container (envsubst so troca as variaveis do ambiente:
-# EVOLUTION_API_KEY e SUPABASE_PUBLISHABLE_KEY, que vem do .env do servidor).
+# EVOLUTION_API_KEY, que vem do .env do servidor).
 
-# cache curto da validacao de sessao (evita bater no Supabase a cada polling)
+# cache curto da validacao de sessao (evita bater no payments-api a cada polling)
 proxy_cache_path /tmp/auth_cache levels=1:2 keys_zone=auth_cache:1m max_size=5m inactive=5m;
 limit_req_zone $binary_remote_addr zone=evo_limit:1m rate=20r/s;
 
@@ -63,7 +63,7 @@ server {
   }
 
   # API de pagamentos (container payments-api). A autenticacao e feita la dentro
-  # (JWT do Supabase / token do webhook / token de servico), entao so repassa.
+  # (JWT proprio / token do webhook / token de servico), entao so repassa.
   location /pay-api/ {
     limit_req zone=evo_limit burst=20 nodelay;
     resolver 127.0.0.11 valid=10s;

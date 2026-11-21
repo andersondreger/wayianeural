@@ -1,4 +1,4 @@
-// Fluxo ponta a ponta do /entitlement com um PostgREST falso em memoria (sem rede, sem Supabase real).
+// Fluxo ponta a ponta do /entitlement com um PostgREST falso em memoria (sem rede, sem banco real).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -28,7 +28,7 @@ const fake = http.createServer(async (req, res) => {
 });
 await new Promise((r) => fake.listen(0, r));
 Object.assign(process.env, {
-  SUPABASE_URL: `http://127.0.0.1:${fake.address().port}`, SUPABASE_SERVICE_ROLE_KEY: 'k', PAY_SERVICE_TOKEN: 'glob',
+  REST_URL: `http://127.0.0.1:${fake.address().port}`, AUTH_SECRET: 'segredo-de-teste-com-mais-de-32-caracteres-ok', PAY_SERVICE_TOKEN: 'glob',
   PAY_SERVICE_TOKENS: 'waysend=ws-key', HANDOFF_SECRET: 'segredo', PANEL_URL: 'https://wayia.com.br/app/',
 });
 const { server } = await import('./server.mjs');

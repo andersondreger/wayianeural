@@ -1,7 +1,6 @@
-import { SUPABASE_URL } from './supabase';
 
 // So aceitamos como foto uma URL do nosso bucket publico "avatars" (nunca uma URL arbitraria de metadata).
-const AVATAR_PREFIX = `${SUPABASE_URL}/storage/v1/object/public/avatars/`;
+const AVATAR_PREFIX = `${typeof location !== 'undefined' ? location.origin : 'https://wayia.com.br'}/pay-api/avatars/`;
 export const safeAvatarUrl = (u: unknown): string => (typeof u === 'string' && u.startsWith(AVATAR_PREFIX) ? u : '');
 
 // Recorta quadrado, reduz para 256px e comprime em JPEG ate caber (o servidor aceita ate 44 KB).

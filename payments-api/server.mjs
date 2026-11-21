@@ -1,14 +1,18 @@
-// WayIA Payments API - zero dependencias (Node 20+).
-// Gateway: Asaas (o mesmo do WayAR). Banco/auth: Supabase do wayianeural.
+// WayIA Payments API - Node 20+ (deps: pg, bcryptjs).
+// Gateway: Asaas (o mesmo do WayAR). Banco: Postgres do wayianeural (via PostgREST); login proprio (auth.mjs).
 // Segredos so por variavel de ambiente (.env da VPS), nunca no navegador.
 import http from 'node:http';
 import { timingSafeEqual, createHmac, createHash } from 'node:crypto';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { authRoutes, bearerUser, googleStart, googleCallback, serviceKey } from './auth.mjs';
+
+const SERVICE_KEY = serviceKey();
 
 const env = (k, d = '') => process.env[k] ?? d;
 const PORT = Number(env('PORT', '3000'));
-const SUPABASE_URL = env('SUPABASE_URL', 'https://dteagxhnuhejefvguxfw.supabase.co');
-const SERVICE_KEY = env('SUPABASE_SERVICE_ROLE_KEY');
-const PUBLISHABLE_KEY = env('SUPABASE_PUBLISHABLE_KEY');
+const REST_URL = env('REST_URL', 'http://rest:3000').replace(/\/+$/, ''); // PostgREST sobre o Postgres do wayianeural
+const AVATAR_DIR = env('AVATAR_DIR', '/data/avatars');
+const APP_URL = env('APP_URL', 'https://wayia.com.br');
 const ASAAS_BASE = env('ASAAS_API_BASE_URL', 'https://sandbox.asaas.com/api/v3');
 const ASAAS_KEY = env('ASAAS_API_KEY');
 const WEBHOOK_TOKEN = env('ASAAS_WEBHOOK_TOKEN');
@@ -182,7 +186,7 @@ export const isEntitled = (sub) =>
   !!sub && sub.status === 'ACTIVE' && (!sub.current_period_end || new Date(sub.current_period_end) > new Date());
 
 const sb = async (path, { method = 'GET', body, prefer } = {}) => {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const res = await fetch(`${REST_URL}/${path}`, {
     method,
     headers: {
       apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json',
@@ -190,7 +194,7 @@ const sb = async (path, { method = 'GET', body, prefer } = {}) => {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new HttpError(502, `supabase ${res.status}`);
+  if (!res.ok) throw new HttpError(502, `banco ${res.status}`);
   return res.status === 204 ? null : res.json();
 };
 
@@ -207,12 +211,8 @@ const asaas = async (path, init = {}) => {
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
 const userFromJwt = async (req) => {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) throw new HttpError(401, 'login necessario');
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: PUBLISHABLE_KEY, Authorization: auth } });
-  if (!res.ok) throw new HttpError(401, 'sessao invalida');
-  const u = await res.json();
-  if (!u.email) throw new HttpError(401, 'sessao invalida');
+  const u = await bearerUser(req).catch(() => null);
+  if (!u?.email) throw new HttpError(401, req.headers.authorization ? 'sessao invalida' : 'login necessario');
   return { email: u.email.toLowerCase(), name: u.user_metadata?.full_name };
 };
 const adminFromJwt = async (req) => {
@@ -463,27 +463,16 @@ const routes = {
   },
 
   // Cancela a renovacao no gateway. Somente assinaturas deste cliente e geridas aqui (central).
-  // Foto do perfil (Supabase Storage, bucket publico "avatars"). Um arquivo por e-mail; devolve a URL publica.
+  // Foto do perfil (disco local /data/avatars, servida em /pay-api/avatars/<arquivo>). Um arquivo por e-mail; devolve a URL publica.
   'POST /me/avatar': async (req) => {
     const u = await userFromJwt(req);
     if (!limitMe(u.email)) throw new HttpError(429, 'muitas requisicoes');
     const buf = parseAvatar((await readJson(req)).image);
     if (!buf) throw new HttpError(400, 'imagem invalida (JPEG de ate 44 KB)');
     const name = `${createHash('sha256').update(u.email).digest('hex').slice(0, 40)}.jpg`;
-    const put = () => fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${name}`, {
-      method: 'POST', body: buf, signal: AbortSignal.timeout(15000),
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
-    });
-    let res = await put();
-    if (!res.ok) {   // 1o uso: cria o bucket publico e tenta de novo
-      await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
-        method: 'POST', headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: 'avatars', name: 'avatars', public: true, file_size_limit: 65536, allowed_mime_types: ['image/jpeg'] }),
-      }).catch(() => {});
-      res = await put();
-    }
-    if (!res.ok) throw new HttpError(502, 'nao foi possivel salvar a foto');
-    return { url: `${SUPABASE_URL}/storage/v1/object/public/avatars/${name}?v=${Date.now()}` };
+    try { await mkdir(AVATAR_DIR, { recursive: true }); await writeFile(`${AVATAR_DIR}/${name}`, buf); }
+    catch { throw new HttpError(502, 'nao foi possivel salvar a foto'); }
+    return { url: `${APP_URL}/pay-api/avatars/${name}?v=${Date.now()}` };
   },
 
   'POST /me/cancel': async (req) => {
@@ -836,13 +825,23 @@ export const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'OPTIONS') { res.writeHead(204, headers); return res.end(); }
   try {
+    const av = url.pathname.match(/^\/avatars\/([0-9a-f]{40}\.jpg)$/);
+    if (av && req.method === 'GET') {
+      const img = await readFile(`${AVATAR_DIR}/${av[1]}`).catch(() => null);
+      if (!img) throw new HttpError(404, 'nao encontrado');
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' }); return res.end(img);
+    }
+    if (req.method === 'GET' && (url.pathname === '/auth/google' || url.pathname === '/auth/google/callback')) {
+      const r = await (url.pathname === '/auth/google' ? googleStart() : googleCallback(req, url));
+      res.writeHead(302, { Location: r.redirect, 'Cache-Control': 'no-store', ...(r.setCookies ? { 'Set-Cookie': r.setCookies } : {}) }); return res.end();
+    }
     const put = url.pathname.match(/^\/admin\/products\/([a-z0-9-]+)$/);
     const tk = url.pathname.match(/^\/admin\/tickets\/([0-9a-f-]{36})\/reply$/);
     const mk = url.pathname.match(/^\/admin\/marketplace\/(.+)$/);
     const handler = mk && ['GET', 'POST', 'PUT'].includes(req.method) ? (r, u) => marketplaceProxy(r, u, mk[1])
       : put && req.method === 'PUT' ? (r) => updateProduct(r, put[1])
       : tk && req.method === 'POST' ? (r) => updateTicket(r, tk[1])
-      : routes[`${req.method} ${url.pathname}`];
+      : routes[`${req.method} ${url.pathname}`] ?? (authRoutes[`${req.method} ${url.pathname}`] && (async (r, u) => authRoutes[`${r.method} ${u.pathname}`](r, u, ['POST', 'PUT'].includes(r.method) ? await readJson(r) : {})));
     if (!handler) throw new HttpError(404, 'nao encontrado');
     const out = await handler(req, url);
     res.writeHead(200, headers); res.end(JSON.stringify(out));
@@ -854,7 +853,7 @@ export const server = http.createServer(async (req, res) => {
 });
 
 if (process.argv[1]?.endsWith('server.mjs')) {
-  for (const k of ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_PUBLISHABLE_KEY', 'ASAAS_API_KEY', 'ASAAS_WEBHOOK_TOKEN', 'PAY_SERVICE_TOKEN', 'ADMIN_EMAILS']) {
+  for (const k of ['DATABASE_URL', 'AUTH_SECRET', 'ASAAS_API_KEY', 'ASAAS_WEBHOOK_TOKEN', 'PAY_SERVICE_TOKEN', 'ADMIN_EMAILS']) {
     if (!env(k)) console.warn(`[payments-api] AVISO: ${k} nao definida`);
   }
   server.listen(PORT, () => console.log(`payments-api na porta ${PORT} (gateway: ${ASAAS_BASE.includes('sandbox') ? 'sandbox' : 'PRODUCAO'})`));
