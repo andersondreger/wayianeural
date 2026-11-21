@@ -39,6 +39,8 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:?defina no .env}
       REST_URL: http://wayianeural-rest:3000
       APP_URL: https://wayia.com.br
+      SEND_URL: ${SEND_URL:-http://waysend-web:3020}
+      GUARDIAN_SERVICE_KEY: ${GUARDIAN_SERVICE_KEY:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       AVATAR_DIR: /data/avatars

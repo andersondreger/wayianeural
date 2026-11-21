@@ -69,7 +69,7 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('start') === 'onboarding') {
+    if (params.get('start') === 'onboarding' || params.get('reset')) {
       setView('ONBOARDING');
     }
     const pay = params.get('pay');

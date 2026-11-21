@@ -103,6 +103,30 @@ export const authRoutes = {
     const meta = { full_name: String(d.full_name ?? '').slice(0, 120) || undefined, phone: String(d.phone ?? '').slice(0, 30) || undefined };
     return session(await createUser({ email, password: body.password, meta }));
   },
+  // Recuperacao de senha por WhatsApp (via WaySend /api/notify). Resposta sempre igual.
+  'POST /auth/forgot': async (req, _u, body) => {
+    const email = String(body.email ?? '').trim().toLowerCase();
+    if (tooMany(`forgot|${ip(req)}`)) throw new HttpErr(429, 'Muitas tentativas. Aguarde alguns minutos.');
+    const u = /^\S+@\S+\.\S+$/.test(email) ? await userByEmail(email) : null;
+    const rawPhone = String(u?.phone ?? u?.user_metadata?.phone ?? '').replace(/\D/g, '');
+    const phone = rawPhone.length < 10 ? null : rawPhone.length <= 11 ? `55${rawPhone}` : rawPhone;
+    if (u && phone) {
+      const token = randomBytes(32).toString('hex');
+      await pool.query(`insert into auth.password_resets (user_id, token_hash, expires_at) values ($1,$2, now() + interval '1 hour')`, [u.id, createHash('sha256').update(token).digest('hex')]);
+      const text = `Use o link para criar uma nova senha (vale 1 hora):\n${APP()}/?reset=${token}\nSe não foi você, ignore.`;
+      const r = await fetch(`${env('SEND_URL', 'http://waysend-web:3020')}/api/notify`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-service-key': env('GUARDIAN_SERVICE_KEY', '') }, body: JSON.stringify({ phone, text }), signal: AbortSignal.timeout(15000) }).catch(() => null);
+      if (!r?.ok) console.warn(`[auth] reset de ${u.email} nao entregue por WhatsApp (${r?.status ?? 'sem resposta'})`);
+    } else if (u) console.warn(`[auth] reset de ${u.email}: conta sem telefone cadastrado`);
+    return { ok: true };
+  },
+  'POST /auth/reset': async (_req, _u, body) => {
+    if (!body.token || String(body.password ?? '').length < 6) throw new HttpErr(400, 'Dados inválidos (senha com 6+ caracteres).');
+    const h = createHash('sha256').update(String(body.token)).digest('hex');
+    const r = await pool.query(`update auth.password_resets set used_at = now() where token_hash = $1 and used_at is null and expires_at > now() returning user_id`, [h]);
+    if (!r.rows[0]) throw new HttpErr(400, 'Link inválido ou expirado.');
+    await pool.query('update auth.users set encrypted_password = $2, updated_at = now() where id = $1', [r.rows[0].user_id, await bcrypt.hash(String(body.password), 10)]);
+    return { ok: true };
+  },
   'GET /auth/me': async (req) => { const u = await bearerUser(req); if (!u) throw new HttpErr(401, 'login necessario'); return { user: u }; },
   'POST /auth/update': async (req, _u, body) => {
     const u = await bearerUser(req); if (!u) throw new HttpErr(401, 'login necessario');

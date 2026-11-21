@@ -7,12 +7,52 @@ import { BusinessQuiz, BusinessQuizData } from '../components/BusinessQuiz';
 import { OtpStep, authErrorMessage } from '../components/OtpStep';
 import { supabase } from '../lib/supabase';
 
+// Recuperacao de senha por WhatsApp: pede o link (forgot) ou define a nova senha com o token (?reset=).
+function RecoverPanel({ token, onBack }: { token: string | null; onBack: () => void }) {
+  const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [err, setErr] = useState('');
+  const post = (path: string, body: unknown) => fetch(`/pay-api/auth/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setErr(''); setMsg('');
+    if (token) {
+      if (pw.length < 6) return setErr('A senha precisa ter pelo menos 6 caracteres.');
+      if (pw !== pw2) return setErr('As senhas não coincidem.');
+    }
+    setBusy(true);
+    const r = await (token ? post('reset', { token, password: pw }) : post('forgot', { email: email.trim() })).catch(() => null);
+    const j: any = await r?.json().catch(() => ({}));
+    setBusy(false);
+    if (!r || !r.ok) return setErr(j?.error ?? 'Não foi possível concluir. Tente de novo.');
+    if (token) { setMsg('Senha alterada! Entre com a nova senha.'); setTimeout(() => { window.location.href = '/app/'; }, 1500); }
+    else setMsg('Se a conta existir, enviamos o link de redefinição para o WhatsApp cadastrado nela. Confira suas mensagens.');
+  };
+  const input = 'w-full bg-white/[0.03] border border-white/10 rounded-xl py-4 px-5 outline-none focus:border-blue-500/40 font-bold transition-all text-sm';
+  return (
+    <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-8">
+      <form onSubmit={submit} className="w-full max-w-md space-y-5">
+        <h2 className="text-3xl font-black">{token ? 'Nova senha' : 'Recuperar senha'}</h2>
+        <p className="text-sm text-gray-400">{token ? 'Escolha a nova senha da sua conta.' : 'Digite o e-mail da conta e enviamos o link pelo WhatsApp cadastrado.'}</p>
+        {token ? (<>
+          <input required type="password" minLength={6} autoComplete="new-password" placeholder="Nova senha" value={pw} onChange={e => setPw(e.target.value)} className={input} />
+          <input required type="password" minLength={6} autoComplete="new-password" placeholder="Confirmar senha" value={pw2} onChange={e => setPw2(e.target.value)} className={input} />
+        </>) : <input required type="email" autoComplete="email" placeholder="nome@empresa.com" value={email} onChange={e => setEmail(e.target.value)} className={input} />}
+        {err && <p role="alert" className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{err}</p>}
+        {msg && <p className="text-sm text-green-400">{msg}</p>}
+        <GlassButton type="submit" disabled={busy} className="w-full !py-5 !text-[12px]">{busy ? 'Aguarde...' : token ? 'Salvar senha' : 'Enviar link'}</GlassButton>
+        <button type="button" onClick={onBack} className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-600 hover:text-blue-500">Voltar ao login</button>
+      </form>
+    </div>
+  );
+}
+
 // Cadastro e quiz criam a conta com senha (OtpStep); login por senha ou Google.
 export function OnboardingPage({ onCompleteQuiz, onBack }: {
   onCompleteQuiz: (data: BusinessQuizData) => void;
   onBack: () => void;
 }) {
   const [otp, setOtp] = useState<{ email: string; password?: string; meta?: { full_name?: string; phone?: string } } | null>(null);
+  const resetToken = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('reset') : null;
+  const [recover, setRecover] = useState<boolean>(!!resetToken);
   const [isLoginMode, setIsLoginMode] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
 
@@ -34,6 +74,8 @@ export function OnboardingPage({ onCompleteQuiz, onBack }: {
     setLoginBusy(false);
     if (error) setLoginErr(authErrorMessage(error));
   };
+
+  if (recover) return <RecoverPanel token={resetToken} onBack={() => { setRecover(false); setIsLoginMode(true); if (resetToken) window.location.href = '/app/'; }} />;
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-[#050505] text-white">
@@ -155,6 +197,12 @@ export function OnboardingPage({ onCompleteQuiz, onBack }: {
                 </button>
               </div>
             </>
+          )}
+
+          {isLoginMode && (
+            <div className="text-center">
+              <button onClick={() => setRecover(true)} className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-600 hover:text-blue-500 transition-colors">Esqueci minha senha</button>
+            </div>
           )}
 
           <div className="text-center">
